@@ -1,0 +1,564 @@
+<template>
+    <div class="orders-container">
+        <h2 class="page-title">Đơn hàng của tôi</h2>
+
+        <div v-if="loading" class="loading">Đang tải đơn hàng...</div>
+        <div v-else-if="userOrders.length === 0" class="empty">Bạn chưa có đơn hàng nào</div>
+
+        <div v-else class="orders-list">
+            <!-- TABS -->
+            <div class="tabs">
+                <button @click="activeTab = 'pending'" :class="['tab-btn', { active: activeTab === 'pending' }]">
+                    Chờ giao ({{ pendingCount }})
+                </button>
+                <button @click="activeTab = 'awaiting'" :class="['tab-btn', { active: activeTab === 'awaiting' }]">
+                    Chờ xác nhận ({{ awaitingCount }})
+                </button>
+                <button @click="activeTab = 'completed'" :class="['tab-btn', { active: activeTab === 'completed' }]">
+                    Đã nhận ({{ completedCount }})
+                </button>
+            </div>
+
+            <!-- Search -->
+            <div class="toolbar">
+                <input v-model="searchKeyword" placeholder="Tìm kiếm theo ID đơn..." class="search-input" />
+            </div>
+
+            <!-- Orders Grid -->
+            <div class="orders-grid">
+                <div v-for="order in filteredOrders" :key="order.id" class="order-card">
+                    <div class="order-header">
+                        <h3>Đơn hàng #{{ order.id }}</h3>
+                        <span class="order-date">{{ formatDate(order.created_at) }}</span>
+                    </div>
+
+                    <div class="order-body">
+                        <div class="order-info">
+                            <label>Tổng tiền:</label>
+                            <span class="total">{{ order.total.toLocaleString('vi-VN') }} VND</span>
+                        </div>
+                    </div>
+
+                    <div class="order-footer">
+                        <button @click="viewOrderDetails(order.id)" class="btn-view">Xem chi tiết</button>
+                        <button v-if="order.status === 'awaiting_confirmation'" @click="confirmReceived(order.id)"
+                            class="btn-confirm">
+                            ✓ Xác nhận đã nhận
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ORDER DETAIL MODAL -->
+    <div v-if="selectedOrder" class="modal-overlay" @click="selectedOrder = null">
+        <div class="modal-content" @click.stop>
+            <button class="btn-close" @click="selectedOrder = null">✕</button>
+            <h2>Chi tiết đơn hàng #{{ selectedOrder.order.id }}</h2>
+
+            <div class="order-info-section">
+                <div class="info-row">
+                    <label>Ngày đặt:</label>
+                    <p>{{ formatDate(selectedOrder.order.created_at) }}</p>
+                </div>
+                <div class="info-row">
+                    <label>Tổng tiền:</label>
+                    <p class="total">{{ selectedOrder.order.total.toLocaleString('vi-VN') }} VND</p>
+                </div>
+                <div class="info-row">
+                    <label>Số điện thoại:</label>
+                    <p>{{ selectedOrder.order.phone_number || 'N/A' }}</p>
+                </div>
+                <div class="info-row">
+                    <label>Địa chỉ giao hàng:</label>
+                    <p class="address">{{ selectedOrder.order.delivery_address || 'N/A' }}</p>
+                </div>
+            </div>
+
+            <!-- Items Table -->
+            <h3>Danh sách sản phẩm</h3>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Sản phẩm</th>
+                        <th>Giá</th>
+                        <th>Số lượng</th>
+                        <th>Thành tiền</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="item in selectedOrder.items" :key="item.id">
+                        <td>{{ item.name }}</td>
+                        <td>{{ item.price.toLocaleString('vi-VN') }} VND</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>{{ (item.price * item.quantity).toLocaleString('vi-VN') }} VND</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="modal-actions">
+                <button @click="selectedOrder = null" class="btn-close-modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script setup>
+import { ref, onMounted, computed } from "vue";
+import axios from "axios";
+import { useRouter } from "vue-router";
+
+const router = useRouter();
+const userOrders = ref([]);
+const selectedOrder = ref(null);
+const loading = ref(false);
+const searchKeyword = ref("");
+const activeTab = ref('pending');
+const userId = localStorage.getItem("user_id");
+
+async function fetchUserOrders() {
+    if (!userId) {
+        router.push("/login");
+        return;
+    }
+
+    loading.value = true;
+    try {
+        const res = await axios.get("http://localhost:3000/orders");
+        // Filter orders for current user
+        userOrders.value = res.data.filter(o => o.user_id == userId);
+        console.log("Đơn hàng của tôi:", userOrders.value);
+    } catch (err) {
+        console.error("Lỗi lấy đơn hàng:", err);
+    } finally {
+        loading.value = false;
+    }
+}
+
+// Lọc theo tab
+const filteredOrdersByTab = computed(() => {
+    return userOrders.value.filter(o => {
+        if (activeTab.value === 'pending') {
+            return o.status === 'pending' || o.status === undefined || o.status === null;
+        } else if (activeTab.value === 'awaiting') {
+            return o.status === 'awaiting_confirmation';
+        } else {
+            return o.status === 'completed';
+        }
+    });
+});
+
+// Filter by search
+const filteredOrders = computed(() => {
+    return filteredOrdersByTab.value.filter(o =>
+        o.id.toString().includes(searchKeyword.value)
+    );
+});
+
+// Đếm số đơn hàng theo trạng thái
+const pendingCount = computed(() =>
+    userOrders.value.filter(o => o.status === 'pending' || o.status === undefined || o.status === null).length
+);
+
+const awaitingCount = computed(() =>
+    userOrders.value.filter(o => o.status === 'awaiting_confirmation').length
+);
+
+const completedCount = computed(() =>
+    userOrders.value.filter(o => o.status === 'completed').length
+);
+
+function formatDate(dateString) {
+    if (!dateString) return "N/A";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" }) + " " + date.toLocaleTimeString("zh-TW", { timeZone: "Asia/Taipei" });
+}
+
+async function viewOrderDetails(orderId) {
+    try {
+        const res = await axios.get(`http://localhost:3000/orders/${orderId}`);
+        selectedOrder.value = res.data;
+        console.log("Chi tiết đơn hàng:", res.data);
+    } catch (err) {
+        console.error("Lỗi lấy chi tiết đơn hàng:", err);
+        alert("Không thể lấy chi tiết đơn hàng");
+    }
+}
+
+async function confirmReceived(orderId) {
+    if (!confirm("Xác nhận bạn đã nhận đúng hàng?")) return;
+
+    try {
+        await axios.put(`http://localhost:3000/orders/${orderId}/confirm-received`);
+        alert("Cảm ơn bạn! Đơn hàng đã hoàn thành.");
+        // Update order status in list
+        const order = userOrders.value.find(o => o.id === orderId);
+        if (order) {
+            order.status = 'completed';
+        }
+        // Close modal if it's the current order
+        if (selectedOrder.value?.order.id === orderId) {
+            selectedOrder.value.order.status = 'completed';
+        }
+    } catch (err) {
+        console.error("Lỗi xác nhận nhận hàng:", err);
+        alert("Không thể xác nhận nhận hàng");
+    }
+}
+
+onMounted(fetchUserOrders);
+</script>
+
+<style scoped>
+/* TABS */
+.tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #ddd;
+}
+
+.tab-btn {
+    padding: 12px 20px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    color: #666;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+    margin-bottom: -2px;
+}
+
+.tab-btn:hover {
+    color: #1e293b;
+}
+
+.tab-btn.active {
+    color: #1e293b;
+    border-bottom-color: #3b82f6;
+}
+
+.orders-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f9f9f9;
+    min-height: calc(100vh - 80px);
+}
+
+.page-title {
+    font-size: 28px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    color: #1e293b;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+    font-size: 16px;
+}
+
+.empty {
+    text-align: center;
+    padding: 40px;
+    color: #999;
+    font-size: 18px;
+}
+
+/* Toolbar */
+.toolbar {
+    margin-bottom: 20px;
+}
+
+.search-input {
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    width: 300px;
+}
+
+/* Orders Grid */
+.orders-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.order-card {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.order-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.order-header {
+    background-color: #1e293b;
+    color: white;
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.order-header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.order-date {
+    font-size: 12px;
+    opacity: 0.8;
+}
+
+.order-body {
+    padding: 15px;
+    flex: 1;
+}
+
+.order-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.order-info label {
+    font-weight: bold;
+    color: #555;
+}
+
+.order-info .total {
+    color: #dc2626;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.order-footer {
+    padding: 15px;
+    border-top: 1px solid #ddd;
+    display: flex;
+    gap: 10px;
+}
+
+.btn-view {
+    flex: 1;
+    padding: 8px;
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.3s ease;
+}
+
+.btn-view:hover {
+    background-color: #2563eb;
+}
+
+.btn-confirm {
+    flex: 1;
+    padding: 8px;
+    background-color: #10b981;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.3s ease;
+}
+
+.btn-confirm:hover {
+    background-color: #059669;
+}
+
+/* MODAL */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1001;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    min-width: 500px;
+    max-width: 700px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    position: relative;
+}
+
+.btn-close {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #999;
+}
+
+.btn-close:hover {
+    color: #333;
+}
+
+.modal-content h2 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    color: #1e293b;
+}
+
+.modal-content h3 {
+    margin: 20px 0 15px;
+    color: #1e293b;
+    font-size: 16px;
+}
+
+.order-info-section {
+    background-color: #f9f9f9;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.info-row:last-child {
+    margin-bottom: 0;
+}
+
+.info-row label {
+    font-weight: bold;
+    color: #555;
+}
+
+.info-row p {
+    color: #333;
+    margin: 0;
+}
+
+.info-row .total {
+    color: #dc2626;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.info-row .address {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.5;
+}
+
+/* Items Table */
+.items-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+
+.items-table th {
+    background-color: #f0f0f0;
+    padding: 10px;
+    text-align: left;
+    font-weight: bold;
+    border-bottom: 1px solid #ddd;
+}
+
+.items-table td {
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+}
+
+/* Modal Actions */
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+.btn-close-modal {
+    padding: 8px 20px;
+    background-color: #6b7280;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.3s ease;
+}
+
+.btn-close-modal:hover {
+    background-color: #4b5563;
+}
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+    .orders-grid {
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 15px;
+    }
+
+    .search-input {
+        width: 100%;
+    }
+
+    .modal-content {
+        min-width: auto;
+        max-width: 90%;
+        padding: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .page-title {
+        font-size: 22px;
+    }
+
+    .orders-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .modal-content {
+        min-width: auto;
+        max-width: 95%;
+        padding: 15px;
+    }
+
+    .order-header {
+        flex-direction: column;
+        gap: 5px;
+        text-align: center;
+    }
+}
+</style>
