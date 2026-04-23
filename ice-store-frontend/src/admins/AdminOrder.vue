@@ -15,6 +15,9 @@
     <!-- SEARCH -->
     <div class="toolbar">
         <input v-model="searchKeyword" placeholder="Tìm kiếm theo tên khách hoặc ID đơn..." class="search-input" />
+
+        <input type="date" v-model="selectedDate" class="date-input">
+        <button v-if="selectedDate" @click="selectedDate = ''" class="btn gray clear-btn">Xóa lọc</button>
     </div>
 
     <!-- ORDERS TABLE -->
@@ -39,7 +42,7 @@
                 <tr v-for="order in paginatedOrders" v-else :key="order.id">
                     <td>#{{ order.id }}</td>
                     <td>{{ order.username }}</td>
-                    <td>{{ order.total.toLocaleString('vi-VN') }} VND</td>
+                    <td>{{ Number(order.total).toLocaleString('vi-VN') }} VND</td>
                     <td>{{ formatDate(order.created_at) }}</td>
                     <td class="actions">
                         <button @click="viewOrder(order.id)" class="btn yellow">Chi tiết</button>
@@ -87,10 +90,6 @@
                     <p>{{ formatDate(selectedOrder.order.created_at) }}</p>
                 </div>
                 <div class="info-group">
-                    <label>Tổng tiền:</label>
-                    <p class="total">{{ selectedOrder.order.total.toLocaleString('vi-VN') }} VND</p>
-                </div>
-                <div class="info-group">
                     <label>Số điện thoại:</label>
                     <p>{{ selectedOrder.order.phone_number || 'N/A' }}</p>
                 </div>
@@ -114,11 +113,20 @@
                 <tbody>
                     <tr v-for="item in selectedOrder.items" :key="item.id">
                         <td>{{ item.name }}</td>
-                        <td>{{ item.price.toLocaleString('vi-VN') }} VND</td>
+                        <td>{{ Number(item.price).toLocaleString('vi-VN') }} VND</td>
                         <td>{{ item.quantity }}</td>
-                        <td>{{ (item.price * item.quantity).toLocaleString('vi-VN') }} VND</td>
+                        <td>{{ (Number(item.price) * item.quantity).toLocaleString('vi-VN') }} VND</td>
                     </tr>
                 </tbody>
+
+                <tfoot>
+                    <tr>
+                        <td colspan="3" class="text-right font-weight-bold">Tổng cộng:</td>
+                        <td class="total-amount">
+                            {{ Number(selectedOrder.order.total).toLocaleString('vi-VN') }} VND
+                        </td>
+                    </tr>
+                </tfoot>
             </table>
 
             <div class="modal-actions">
@@ -129,7 +137,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import axios from "axios";
 
 const orders = ref([]);
@@ -139,6 +147,7 @@ const loading = ref(false);
 const currentPage = ref(1);
 const itemsPerPage = 8;
 const activeTab = ref('pending');
+const selectedDate = ref("");
 
 async function fetchOrders() {
     loading.value = true;
@@ -169,11 +178,30 @@ const filteredOrdersByTab = computed(() => {
 
 // Lọc theo tìm kiếm
 const filteredOrders = computed(() => {
-    return filteredOrdersByTab.value.filter(o =>
-        o.id.toString().includes(searchKeyword.value) ||
-        o.username.toLowerCase().includes(searchKeyword.value.toLowerCase())
-    );
+    return filteredOrdersByTab.value.filter(o => {
+        const matchKeyword =
+            o.id.toString().includes(searchKeyword.value) ||
+            o.username.toLowerCase().includes(searchKeyword.value.toLowerCase())
+            ;
+        let matchDate = true;
+        if (selectedDate.value) {
+            const orderDate = new Date(o.created_at);
+            const year = orderDate.getFullYear();
+            const month = String(orderDate.getMonth() + 1).padStart(2, '0');
+            const day = String(orderDate.getDate()).padStart(2, '0');
+
+            const formattedOrderDate = `${year}-${month}-${day}`;
+
+            matchDate = formattedOrderDate === selectedDate.value;
+        }
+        return matchKeyword && matchDate;
+    });
 });
+
+watch([activeTab, searchKeyword, selectedDate], () => {
+    currentPage.value = 1; // Reset về trang 1 khi thay đổi bộ lọc
+});
+
 
 // Đếm số đơn hàng theo trạng thái
 const pendingCount = computed(() =>
@@ -358,6 +386,28 @@ onMounted(fetchOrders);
 
 .btn.gray:hover {
     background: #4b5563;
+}
+
+.modal-items-table tfoot td {
+    padding: 15px 10px;
+    border-top: 2px solid #1e293b;
+    background-color: #f8fafc;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.font-weight-bold {
+    font-weight: bold;
+    font-size: 16px;
+    color: #333;
+}
+
+.total-amount {
+    color: #dc2626;
+    font-weight: 900;
+    font-size: 18px;
 }
 
 /* PAGINATION */

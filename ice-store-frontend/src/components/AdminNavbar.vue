@@ -8,6 +8,9 @@
 
             <!-- Menu Items -->
             <div class="menu">
+                <router-link to="/admin/dashboard" class="nav-link" :class="{ active: isActive('/admin/dashboard') }">
+                    Thống kê doanh thu
+                </router-link>
                 <router-link to="/admin/products" class="nav-link" :class="{ active: isActive('/admin/products') }">
                     Quản lý sản phẩm
                 </router-link>

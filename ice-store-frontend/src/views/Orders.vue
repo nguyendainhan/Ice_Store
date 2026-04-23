@@ -35,7 +35,7 @@
                     <div class="order-body">
                         <div class="order-info">
                             <label>Tổng tiền:</label>
-                            <span class="total">{{ order.total.toLocaleString('vi-VN') }} VND</span>
+                            <span class="total">{{ Number(order.total).toLocaleString('vi-VN') }} VND</span>
                         </div>
                     </div>
 
@@ -63,10 +63,6 @@
                     <p>{{ formatDate(selectedOrder.order.created_at) }}</p>
                 </div>
                 <div class="info-row">
-                    <label>Tổng tiền:</label>
-                    <p class="total">{{ selectedOrder.order.total.toLocaleString('vi-VN') }} VND</p>
-                </div>
-                <div class="info-row">
                     <label>Số điện thoại:</label>
                     <p>{{ selectedOrder.order.phone_number || 'N/A' }}</p>
                 </div>
@@ -90,11 +86,20 @@
                 <tbody>
                     <tr v-for="item in selectedOrder.items" :key="item.id">
                         <td>{{ item.name }}</td>
-                        <td>{{ item.price.toLocaleString('vi-VN') }} VND</td>
+                        <td>{{ Number(item.price).toLocaleString('vi-VN') }} VND</td>
                         <td>{{ item.quantity }}</td>
-                        <td>{{ (item.price * item.quantity).toLocaleString('vi-VN') }} VND</td>
+                        <td>{{ (Number(item.price) * item.quantity).toLocaleString('vi-VN') }} VND</td>
                     </tr>
                 </tbody>
+
+                <tfoot>
+                    <tr>
+                        <td colspan="3" class="text-right font-weight-bold">Tổng cộng:</td>
+                        <td class="total-amount">
+                            {{ Number(selectedOrder.order.total).toLocaleString('vi-VN') }} VND
+                        </td>
+                    </tr>
+                </tfoot>
             </table>
 
             <div class="modal-actions">
@@ -384,6 +389,28 @@ onMounted(fetchUserOrders);
 
 .btn-confirm:hover {
     background-color: #059669;
+}
+
+.modal-items-table tfoot td {
+    padding: 15px 10px;
+    border-top: 2px solid #1e293b;
+    background-color: #f8fafc;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.font-weight-bold {
+    font-weight: bold;
+    font-size: 16px;
+    color: #333;
+}
+
+.total-amount {
+    color: #dc2626;
+    font-weight: 900;
+    font-size: 18px;
 }
 
 /* MODAL */

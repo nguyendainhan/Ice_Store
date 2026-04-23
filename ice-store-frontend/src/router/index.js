@@ -12,6 +12,7 @@ import AdminProducts from "../admins/AdminProducts.vue"
 import AdminCustoms from "../admins/AdminCustoms.vue"
 import AdminOrder from "../admins/AdminOrder.vue";
 import AdminMember from "../admins/AdminMember.vue";
+import DashBoard from '../admins/DashBoard.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -27,36 +28,38 @@ const router = createRouter({
     { path: '/admin/customers', component: AdminCustoms, meta: { requiresAdmin: true } },
     { path: '/admin/orders', component: AdminOrder, meta: { requiresAdmin: true } },
     { path: '/admin/members', component: AdminMember, meta: { requiresSupervisor: true }},
+    { path: '/admin/dashboard', component: DashBoard, meta: { requiresAdmin: true }},
     { path: '/register', component: Register },
     { path: '/cart', component: Cart }
   ]
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach((to, from) => {
   const role = localStorage.getItem("role");
   const isSupervisor = localStorage.getItem("is_supervisor") === "1";
 
-  // Các trang quản lý (products, customers, orders)
+  // Các trang quản lý (products, customers, orders, dashboard)
   if (to.meta.requiresAdmin) {
     if (role === "admin" || role === "staff") {
-      return next();
+      return true; // Thay cho next() - Cho phép truy cập
     } else {
       alert("Bạn không có quyền truy cập trang này!");
-      return next("/");
+      return "/"; // Thay cho next("/") - Đẩy về trang chủ
     }
   }
 
   // Trang quản lý nhân viên (chỉ supervisor)
   if (to.meta.requiresSupervisor) {
     if (role === "admin" && isSupervisor) {
-      return next();
+      return true; // Thay cho next()
     } else {
       alert("Bạn không có quyền quản lý nhân viên!");
-      return next("/admin/products");
+      return "/admin/products"; // Thay cho next("/admin/products")
     }
   }
 
-  next();
+  // Mặc định cho phép các route không yêu cầu quyền đi tiếp
+  return true; // Thay cho next() ở cuối file
 });
 
 export default router
