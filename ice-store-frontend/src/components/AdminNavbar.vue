@@ -60,9 +60,9 @@ const router = useRouter();
 const route = useRoute();
 const username = ref("");
 const isSupervisor = ref(false);
-const userRole = ref("");
+const userRole = ref(localStorage.getItem("role") || "");
 
-// 👉 CÁC BIẾN CHO TÍNH NĂNG CẢNH BÁO
+// CÁC BIẾN CHO TÍNH NĂNG CẢNH BÁO
 const overdueCount = ref(0);
 let pollingInterval = null;
 
@@ -71,14 +71,14 @@ onMounted(() => {
     isSupervisor.value = localStorage.getItem("is_supervisor") === "1";
     userRole.value = localStorage.getItem("role") || "";
 
-    // 👉 Kiểm tra đơn trễ ngay khi load trang
+    // Kiểm tra đơn trễ ngay khi load trang
     checkOverdueOrders();
 
-    // 👉 Cài đặt lặp lại tự động kiểm tra mỗi 1 phút (60000ms)
+    // Cài đặt lặp lại tự động kiểm tra mỗi 1 phút (60000ms)
     pollingInterval = setInterval(checkOverdueOrders, 60000);
 });
 
-// 👉 Dọn dẹp bộ đếm giờ khi chuyển khỏi hệ thống để không nặng máy
+// Dọn dẹp bộ đếm giờ khi chuyển khỏi hệ thống để không nặng máy
 onUnmounted(() => {
     if (pollingInterval) clearInterval(pollingInterval);
 });

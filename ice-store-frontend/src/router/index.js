@@ -70,38 +70,42 @@ router.beforeEach((to, from) => {
   return true; // Thay cho next() ở cuối file
 });
 
+// === (NAVIGATION GUARD) ===
 router.beforeEach((to, from, next) => {
-    // Lấy thông tin quyền từ localStorage (lúc đăng nhập đã lưu)
-    const role = localStorage.getItem('role');
-    const isSuper = localStorage.getItem('is_supervisor') === '1';
+    // 1. Lấy vai trò (role) từ localStorage
+    const role = localStorage.getItem("role");
+    const isAuthenticated = !!localStorage.getItem("token");
 
-    // Nếu cố tình vào khu vực Admin
-    if (to.path.startsWith('/admin')) {
+    // 2. Nếu là ADMIN
+    if (role === 'admin') {
+        // Nếu admin cố tình (hoặc vô tình do mở lại tab) vào trang chủ '/', '/orders', '/cart' của khách
+        // -> Bắt cổ lôi thẳng về trang '/admin/dashboard'
+        if (to.path === '/' || to.path === '/orders' || to.path === '/cart') {
+            return next('/admin/dashboard');
+        }
         
-        // 1. Khách vãng lai hoặc Customer -> Đá ra trang login
-        if (!role || role === 'customer') {
-            return next('/login');
-        }
+        // Nếu admin muốn vào các trang nội bộ admin khác -> Cho qua bình thường
+        return next();
+    }
 
-        // 2. Phân quyền Staff (Chỉ được vào trang Quản lý đơn hàng)
-        if (role === 'staff') {
-            if (to.path !== '/admin/orders') {
-                alert("🔒 Lỗi quyền: Nhân viên (Staff) chỉ được phép truy cập Quản lý đơn hàng!");
-                return next('/admin/orders'); // Ép quay lại trang đơn hàng
-            }
-        }
-
-        // 3. Phân quyền Admin thường (Không được vào trang Members)
-        if (role === 'admin' && !isSuper) {
-            if (to.path === '/admin/members') {
-                alert("🔒 Lỗi quyền: Chỉ Super Admin mới được quản lý nhân sự!");
-                return next('/admin/products'); // Ép quay lại trang sản phẩm
-            }
+    // 3. Nếu KHÁCH HÀNG (Customer)
+    if (role === 'customer') {
+        // Chặn khách hàng táy máy gõ URL truy cập vào các trang có chữ /admin/...
+        if (to.path.startsWith('/admin')) {
+            alert("Bạn không có quyền truy cập trang này!");
+            return next('/'); // Đẩy về trang chủ
         }
     }
-    
-    // Nếu pass hết các vòng kiểm tra trên thì cho phép đi tiếp
+
+    // 4. Nếu CHƯA ĐĂNG NHẬP (Chưa có token)
+    if (!isAuthenticated) {
+        // Nếu cố tình vào các trang yêu cầu đăng nhập (giỏ hàng, thanh toán, admin...)
+        if (to.path === '/cart' || to.path === '/orders' || to.path.startsWith('/admin')) {
+            return next('/login'); // Ép đi đăng nhập
+        }
+    }
+
+    // 5. Nếu không vi phạm luật nào ở trên -> Cho đi tiếp bình thường
     next();
 });
-
 export default router
