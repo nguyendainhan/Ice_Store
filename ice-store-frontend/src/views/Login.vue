@@ -25,16 +25,17 @@ async function login() {
         // Lưu thông tin vào localStorage
         localStorage.setItem("token", res.data.token);
         localStorage.setItem("role", res.data.role);
-        localStorage.setItem("user_id", res.data.user_id);
+        localStorage.setItem("user_id", res.data.id || res.data.user_id);
         localStorage.setItem("username", username.value);
         localStorage.setItem("is_supervisor", res.data.is_supervisor ? "1" : "0");
 
         alert("Đăng nhập thành công");
         userNameState.value = username.value;
         roleState.value = res.data.role;
+
         // Điều hướng admin hoặc user bình thường
         if (res.data.role === "admin" || res.data.role === "staff") {
-            router.push("/admin/products");
+            router.push("/admin/dashboard");
         } else {
             router.push("/shop");
         }
@@ -79,6 +80,11 @@ async function login() {
                     </tr>
                 </tbody>
             </table>
+
+            <div class="extra-links">
+                <router-link to="/forgot-password" class="link-item">Quên mật khẩu?</router-link>
+                <router-link to="/register" class="link-item highlight">Đăng ký tài khoản mới</router-link>
+            </div>
 
         </div>
     </div>
@@ -171,6 +177,35 @@ async function login() {
 .admin-button:disabled {
     background-color: #888;
     cursor: not-allowed;
+}
+
+/* 👉 CSS CHO KHU VỰC LINK ĐĂNG KÝ / QUÊN MẬT KHẨU */
+.extra-links {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+    font-size: 14px;
+    padding: 0 5px;
+}
+
+.link-item {
+    color: #666;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.link-item:hover {
+    color: #111;
+    text-decoration: underline;
+}
+
+.link-item.highlight {
+    color: #007bff;
+    font-weight: bold;
+}
+
+.link-item.highlight:hover {
+    color: #0056b3;
 }
 
 /* RESPONSIVE */
@@ -288,6 +323,14 @@ async function login() {
         font-size: 14px;
         width: 100%;
         box-sizing: border-box;
+    }
+
+    /* 👉 CHỈNH LẠI LINK CHO MOBILE */
+    .extra-links {
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+        margin-top: 25px;
     }
 }
 </style>

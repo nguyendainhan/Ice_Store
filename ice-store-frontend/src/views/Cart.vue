@@ -10,6 +10,27 @@ const loading = ref(false);
 const errorMessage = ref("");
 const deliveryAddress = ref("");
 const phoneNumber = ref("");
+const fullName = ref("");
+const email = ref("");
+const saveAsDefault = ref(false);
+
+// Sửa lại hàm fetchUserProfile để lưu đủ data:
+async function fetchUserProfile() {
+    if (!userId) return;
+    try {
+        const res = await axios.get("http://localhost:3000/profile", {
+            headers: { user_id: userId }
+        });
+        if (res.data) {
+            phoneNumber.value = res.data.phone || "";
+            deliveryAddress.value = res.data.address || "";
+            fullName.value = res.data.full_name || ""; // Lưu tạm
+            email.value = res.data.email || "";        // Lưu tạm
+        }
+    } catch (err) {
+        console.error("Lỗi lấy thông tin người dùng:", err);
+    }
+}
 
 // Lấy giỏ hàng theo user
 async function fetchCart() {
@@ -81,6 +102,7 @@ async function checkout() {
     }));
 
     try {
+        // 1. Tạo đơn hàng
         const res = await axios.post("http://localhost:3000/orders", {
             user_id: userId,
             items: items,
@@ -88,11 +110,22 @@ async function checkout() {
             delivery_address: deliveryAddress.value,
             phone_number: phoneNumber.value
         });
+
+        // 2. NẾU KHÁCH CHỌN LƯU MẶC ĐỊNH -> Cập nhật Profile
+        if (saveAsDefault.value) {
+            await axios.put(`http://localhost:3000/profile`, {
+                full_name: fullName.value,
+                email: email.value,
+                phone: phoneNumber.value,
+                address: deliveryAddress.value
+            }, {
+                headers: { user_id: userId }
+            });
+        }
+
         alert("Thanh toán thành công! Đơn hàng #" + res.data.orderId);
-        // Reset address fields
-        deliveryAddress.value = "";
-        phoneNumber.value = "";
-        // Xóa tất cả sản phẩm khỏi giỏ hàng sau khi thanh toán
+
+        // 3. Xóa giỏ hàng
         for (const item of cartItems.value) {
             await axios.delete(`http://localhost:3000/cart/${item.id}`);
         }
@@ -105,6 +138,7 @@ async function checkout() {
 
 onMounted(() => {
     fetchCart();
+    fetchUserProfile(); // 👉 Gọi hàm lấy thông tin người dùng ngay khi tải trang
 });
 </script>
 
@@ -160,6 +194,14 @@ onMounted(() => {
                         <textarea id="address" v-model="deliveryAddress"
                             placeholder="Nhập địa chỉ giao hàng (ví dụ: 123 Đường ABC, Phường XYZ, Quận 1, TP.HCM)"
                             class="form-textarea" rows="3"></textarea>
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-top: -5px;">
+                        <input type="checkbox" id="saveDefault" v-model="saveAsDefault"
+                            style="width: 16px; height: 16px; cursor: pointer;" />
+                        <label for="saveDefault"
+                            style="margin: 0; cursor: pointer; font-weight: normal; font-size: 14px;">
+                            Lưu SĐT và Địa chỉ này làm mặc định cho lần mua sau
+                        </label>
                     </div>
                 </div>
 

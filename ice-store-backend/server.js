@@ -41,7 +41,8 @@ const db = mysql.createConnection({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  timezone: "+08:00"
+  timezone: "+08:00",
+  ssl: { rejectUnauthorized: false }
 });
 
 db.connect(err => {
@@ -50,9 +51,9 @@ db.connect(err => {
 });
 
 // === API sản phẩm ===
-// Lấy tất cả sản phẩm
+// Lấy tất cả sản phẩm đang bán (is_deleted = 0)
 app.get("/products", (req, res) => {
-  db.query("SELECT * FROM products", (err, result) => {
+  db.query("SELECT * FROM products WHERE is_deleted = 0", (err, result) => {
     if (err) return res.status(500).json({ message: "Lỗi lấy sản phẩm" });
     res.json(result);
   });
@@ -115,31 +116,98 @@ app.put("/products/:id", upload.single("image"), (req, res) => {
   }
 });
 
-// Xóa sản phẩm
+// Xóa sản phẩm (Xóa mềm - Ẩn đi chứ không xóa thật)
 app.delete("/products/:id", (req, res) => {
   const { id } = req.params;
-  db.query("DELETE FROM products WHERE id=?", [id], (err) => {
-    if (err) return res.status(500).json({ message: "Lỗi xóa sản phẩm" });
-    res.json({ message: "Xóa sản phẩm thành công" });
+
+  // 1. Chỉ xóa sản phẩm này khỏi giỏ hàng (carts) để khách không mua được nữa
+  db.query("DELETE FROM carts WHERE product_id = ?", [id], (err) => {
+    if (err) return res.status(500).json({ message: "Lỗi dọn dẹp giỏ hàng" });
+
+    // 2. KHÔNG XÓA trong order_items. Chỉ CẬP NHẬT bảng products thành is_deleted = 1
+    db.query("UPDATE products SET is_deleted = 1 WHERE id = ?", [id], (err) => {
+      if (err) return res.status(500).json({ message: "Lỗi xóa sản phẩm" });
+      res.json({ message: "Xóa sản phẩm thành công (Đã ẩn)" });
+    });
   });
+});
+
+// API Lấy danh sách thùng rác
+app.get("/products/trash", (req, res) => {
+    db.query("SELECT * FROM products WHERE is_deleted = 1", (err, result) => {
+        if (err) return res.status(500).json({ message: "Lỗi lấy thùng rác" });
+        res.json(result);
+    });
+});
+
+// API Khôi phục sản phẩm
+app.put("/products/:id/restore", (req, res) => {
+    const { id } = req.params;
+    db.query("UPDATE products SET is_deleted = 0 WHERE id = ?", [id], (err) => {
+        if (err) return res.status(500).json({ message: "Lỗi khôi phục sản phẩm" });
+        res.json({ message: "Khôi phục sản phẩm thành công" });
+    });
+});
+
+// === API Cảnh báo đơn hàng quá hạn (SLA) ===
+app.get("/orders/overdue", (req, res) => {
+    
+    // Tính thời gian "30 phút trước" bằng chính Node.js để chuẩn múi giờ
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000);
+
+    const query = `
+        SELECT id FROM orders 
+        WHERE (status = 'pending' OR status IS NULL) 
+        AND created_at <= ?
+    `;
+    
+    // Truyền biến thirtyMinsAgo vào dấu ?
+    db.query(query, [thirtyMinsAgo], (err, results) => {
+        if (err) {
+            console.error("Lỗi lấy đơn quá hạn:", err);
+            return res.status(500).json({ message: "Lỗi server" });
+        }
+        res.json({ overdueCount: results.length });
+    });
 });
 
 // === API người dùng ===
 // Đăng ký
 app.post("/register", async (req, res) => {
-  const { username, password, role } = req.body;
-  if (!username || !password) return res.status(400).json({ message: "Vui lòng nhập username và password" });
+    // Nhận thêm full_name, email, phone, address từ Vue gửi lên
+    const { username, password, full_name, email, phone, address } = req.body;
 
-  const hashed = await bcrypt.hash(password, 10);
-
-  db.query(
-    "INSERT INTO users (username, password, role) VALUES (?,?,?)",
-    [username, hashed, role || 'customer'],
-    (err) => {
-      if (err) return res.status(400).json({ message: "User exists" });
-      res.json({ message: "Registered" });
+    if (!username || !password) {
+        return res.status(400).json({ message: "Vui lòng nhập đầy đủ username và password" });
     }
-  );
+
+    try {
+        db.query("SELECT id FROM users WHERE username = ?", [username], async (err, results) => {
+            if (err) return res.status(500).json({ message: "Lỗi kiểm tra username" });
+            
+            if (results.length > 0) {
+                return res.status(400).json({ message: "Username đã tồn tại" });
+            }
+            const hashedPassword = await bcrypt.hash(password, 10);
+
+            const query = `
+                INSERT INTO users (username, password, full_name, email, phone, address, role, is_supervisor) 
+                VALUES (?, ?, ?, ?, ?, ?, 'customer', 0)
+            `;
+            
+            const values = [username, hashedPassword, full_name || null, email || null, phone || null, address || null];
+
+            db.query(query, values, (err, result) => {
+                if (err) {
+                    console.error("Lỗi đăng ký:", err);
+                    return res.status(500).json({ message: "Lỗi tạo tài khoản" });
+                }
+                res.json({ message: "Đăng ký thành công!" });
+            });
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Lỗi server" });
+    }
 });
 
 // Đăng nhập
@@ -164,6 +232,48 @@ app.post("/login", (req, res) => {
       is_supervisor: user.is_supervisor || 0
     });
   });
+});
+
+// === API Khôi phục mật khẩu (Quên mật khẩu) ===
+app.post("/reset-password", async (req, res) => {
+    const { username, email, new_password } = req.body;
+
+    if (!username || !email || !new_password) {
+        return res.status(400).json({ message: "Vui lòng nhập đầy đủ thông tin" });
+    }
+
+    // 1. CHÚ Ý: Lấy thêm cột 'role' từ database để kiểm tra
+    db.query("SELECT id, role FROM users WHERE username = ? AND email = ?", [username, email], async (err, results) => {
+        if (err) {
+            console.error("Lỗi server:", err);
+            return res.status(500).json({ message: "Lỗi kiểm tra thông tin" });
+        }
+        
+        if (results.length === 0) {
+            return res.status(404).json({ message: "Username hoặc Email không chính xác!" });
+        }
+
+        const user = results[0];
+
+        // 2. Chặn Admin và Staff
+        if (user.role === 'admin' || user.role === 'staff') {
+            return res.status(403).json({ 
+                message: "Tài khoản nội bộ không được phép dùng chức năng này. Vui lòng liên hệ Super Admin!" 
+            });
+        }
+
+        // 3. Nếu là customer thì cho phép đổi bình thường
+        try {
+            const hashedPassword = await bcrypt.hash(new_password, 10);
+            
+            db.query("UPDATE users SET password = ? WHERE id = ?", [hashedPassword, user.id], (err) => {
+                if (err) return res.status(500).json({ message: "Lỗi cập nhật mật khẩu" });
+                res.json({ message: "Khôi phục mật khẩu thành công!" });
+            });
+        } catch (error) {
+            res.status(500).json({ message: "Lỗi mã hóa mật khẩu" });
+        }
+    });
 });
 
 // === Tạo đơn hàng ===
@@ -236,15 +346,66 @@ app.delete("/cart/:id", (req, res) => {
     });
 });
 
+// --- 1. API Lấy thông tin User ---
+app.get("/profile", (req, res) => {
+    const { user_id } = req.headers;
+    if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
+
+    db.query("SELECT full_name, email, phone, address FROM users WHERE id = ?", [user_id], (err, results) => {
+        if (err) return res.status(500).json({ message: "Lỗi server" });
+        if (results.length === 0) return res.status(404).json({ message: "Không tìm thấy user" });
+        res.json(results[0]);
+    });
+});
+
+// --- 2. API Cập nhật thông tin User ---
+app.put("/profile", (req, res) => {
+    const { user_id } = req.headers;
+    const { full_name, email, phone, address } = req.body;
+    
+    if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
+
+    const query = "UPDATE users SET full_name = ?, email = ?, phone = ?, address = ? WHERE id = ?";
+    db.query(query, [full_name, email, phone, address, user_id], (err) => {
+        if (err) return res.status(500).json({ message: "Lỗi cập nhật thông tin" });
+        res.json({ message: "Cập nhật thành công" });
+    });
+});
+
+// --- 3. API Đổi mật khẩu ---
+app.put("/change-password", async (req, res) => {
+    const { user_id } = req.headers;
+    const { old_password, new_password } = req.body;
+
+    if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
+
+    // Lấy mật khẩu cũ từ DB ra để so sánh
+    db.query("SELECT password FROM users WHERE id = ?", [user_id], async (err, results) => {
+        if (err || results.length === 0) return res.status(500).json({ message: "Lỗi hệ thống" });
+
+        const user = results[0];
+        // Dùng thư viện bcrypt (của bạn) để so khớp pass cũ
+        const isMatch = await bcrypt.compare(old_password, user.password);
+        if (!isMatch) return res.status(400).json({ message: "Mật khẩu hiện tại không đúng" });
+
+        // Mã hóa pass mới và lưu lại
+        const hashedNewPassword = await bcrypt.hash(new_password, 10);
+        db.query("UPDATE users SET password = ? WHERE id = ?", [hashedNewPassword, user_id], (err) => {
+            if (err) return res.status(500).json({ message: "Lỗi cập nhật mật khẩu" });
+            res.json({ message: "Đổi mật khẩu thành công" });
+        });
+    });
+});
+
 // === API Quản lý khách hàng ===
 // Lấy danh sách tất cả khách hàng
 app.get("/customers", (req, res) => {
-    db.query("SELECT id, username, created_at FROM users WHERE role = 'customer' ORDER BY created_at DESC", (err, result) => {
+    // Thêm các cột dữ liệu mới vào câu lệnh SELECT
+    db.query("SELECT id, username, full_name, email, phone, address, created_at FROM users WHERE role = 'customer' ORDER BY created_at DESC", (err, result) => {
         if (err) {
             console.error("Lỗi lấy danh sách khách hàng:", err);
             return res.status(500).json({ message: "Lỗi lấy danh sách khách hàng", error: err.message });
         }
-        console.log("Danh sách khách hàng:", result);
         res.json(result);
     });
 });
@@ -606,6 +767,7 @@ function deleteStaffMember(res, id) {
 }
 
 // === Chạy server ===
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
+const PORT = process.env.PORT || 3000; 
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });

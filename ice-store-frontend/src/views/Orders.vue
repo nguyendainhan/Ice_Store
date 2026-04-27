@@ -3,10 +3,9 @@
         <h2 class="page-title">Đơn hàng của tôi</h2>
 
         <div v-if="loading" class="loading">Đang tải đơn hàng...</div>
-        <div v-else-if="userOrders.length === 0" class="empty">Bạn chưa có đơn hàng nào</div>
+        <div v-else-if="userOrders.length === 0" class="empty">Bạn chưa từng đặt đơn hàng nào</div>
 
         <div v-else class="orders-list">
-            <!-- TABS -->
             <div class="tabs">
                 <button @click="activeTab = 'pending'" :class="['tab-btn', { active: activeTab === 'pending' }]">
                     Chờ giao ({{ pendingCount }})
@@ -19,39 +18,52 @@
                 </button>
             </div>
 
-            <!-- Search -->
-            <div class="toolbar">
+            <div class="toolbar" style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <input v-model="searchKeyword" placeholder="Tìm kiếm theo ID đơn..." class="search-input" />
+
+                <input type="month" v-model="selectedMonth" class="search-input" style="width: auto;">
+
+                <button v-if="selectedMonth" @click="selectedMonth = ''" class="btn-view"
+                    style="width: auto; background: #6b7280;">Xem tất cả thời gian</button>
             </div>
 
-            <!-- Orders Grid -->
-            <div class="orders-grid">
-                <div v-for="order in filteredOrders" :key="order.id" class="order-card">
-                    <div class="order-header">
-                        <h3>Đơn hàng #{{ order.id }}</h3>
-                        <span class="order-date">{{ formatDate(order.created_at) }}</span>
-                    </div>
+            <div v-if="filteredOrders.length === 0" class="empty" style="padding: 20px 0;">Không có đơn hàng nào khớp
+                với tìm kiếm trong thời gian này.</div>
 
-                    <div class="order-body">
-                        <div class="order-info">
-                            <label>Tổng tiền:</label>
-                            <span class="total">{{ Number(order.total).toLocaleString('vi-VN') }} VND</span>
+            <div v-else>
+                <div class="orders-grid">
+                    <div v-for="order in paginatedOrders" :key="order.id" class="order-card">
+                        <div class="order-header">
+                            <h3>Đơn hàng #{{ order.id }}</h3>
+                            <span class="order-date">{{ formatDate(order.created_at) }}</span>
+                        </div>
+
+                        <div class="order-body">
+                            <div class="order-info">
+                                <label>Tổng tiền:</label>
+                                <span class="total">{{ Number(order.total).toLocaleString('vi-VN') }} VND</span>
+                            </div>
+                        </div>
+
+                        <div class="order-footer">
+                            <button @click="viewOrderDetails(order.id)" class="btn-view">Xem chi tiết</button>
+                            <button v-if="order.status === 'awaiting_confirmation'" @click="confirmReceived(order.id)"
+                                class="btn-confirm">
+                                ✓ Xác nhận đã nhận
+                            </button>
                         </div>
                     </div>
+                </div>
 
-                    <div class="order-footer">
-                        <button @click="viewOrderDetails(order.id)" class="btn-view">Xem chi tiết</button>
-                        <button v-if="order.status === 'awaiting_confirmation'" @click="confirmReceived(order.id)"
-                            class="btn-confirm">
-                            ✓ Xác nhận đã nhận
-                        </button>
-                    </div>
+                <div class="pagination" v-if="totalPages > 0">
+                    <button :disabled="currentPage === 1" @click="currentPage--">Trang trước</button>
+                    <span>Trang {{ currentPage }} / {{ totalPages }}</span>
+                    <button :disabled="currentPage === totalPages" @click="currentPage++">Trang sau</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- ORDER DETAIL MODAL -->
     <div v-if="selectedOrder" class="modal-overlay" @click="selectedOrder = null">
         <div class="modal-content" @click.stop>
             <button class="btn-close" @click="selectedOrder = null">✕</button>
@@ -72,7 +84,6 @@
                 </div>
             </div>
 
-            <!-- Items Table -->
             <h3>Danh sách sản phẩm</h3>
             <table class="items-table">
                 <thead>
@@ -110,7 +121,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue";
+// 👉 Bổ sung thêm 'watch' vào import
+import { ref, onMounted, computed, watch } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
 
@@ -122,6 +134,14 @@ const searchKeyword = ref("");
 const activeTab = ref('pending');
 const userId = localStorage.getItem("user_id");
 
+// 👉 KHAI BÁO BIẾN PHÂN TRANG
+const currentPage = ref(1);
+const itemsPerPage = 6; // Đặt 6 để grid hiển thị đẹp (bội số của 2 và 3)
+
+const today = new Date();
+const currentYearMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+const selectedMonth = ref(currentYearMonth);
+
 async function fetchUserOrders() {
     if (!userId) {
         router.push("/login");
@@ -131,9 +151,7 @@ async function fetchUserOrders() {
     loading.value = true;
     try {
         const res = await axios.get("http://localhost:3000/orders");
-        // Filter orders for current user
         userOrders.value = res.data.filter(o => o.user_id == userId);
-        console.log("Đơn hàng của tôi:", userOrders.value);
     } catch (err) {
         console.error("Lỗi lấy đơn hàng:", err);
     } finally {
@@ -141,7 +159,6 @@ async function fetchUserOrders() {
     }
 }
 
-// Lọc theo tab
 const filteredOrdersByTab = computed(() => {
     return userOrders.value.filter(o => {
         if (activeTab.value === 'pending') {
@@ -154,24 +171,66 @@ const filteredOrdersByTab = computed(() => {
     });
 });
 
-// Filter by search
 const filteredOrders = computed(() => {
-    return filteredOrdersByTab.value.filter(o =>
-        o.id.toString().includes(searchKeyword.value)
-    );
+    return filteredOrdersByTab.value.filter(o => {
+        const matchKeyword = o.id.toString().includes(searchKeyword.value);
+
+        let matchMonth = true;
+        if (selectedMonth.value) {
+            const orderDate = new Date(o.created_at);
+            const year = orderDate.getFullYear();
+            const month = String(orderDate.getMonth() + 1).padStart(2, '0');
+            matchMonth = (`${year}-${month}` === selectedMonth.value);
+        }
+
+        return matchKeyword && matchMonth;
+    });
 });
 
-// Đếm số đơn hàng theo trạng thái
+// 👉 TÍNH TOÁN PHÂN TRANG
+const totalPages = computed(() => Math.ceil(filteredOrders.value.length / itemsPerPage));
+
+const paginatedOrders = computed(() => {
+    const start = (currentPage.value - 1) * itemsPerPage;
+    return filteredOrders.value.slice(start, start + itemsPerPage);
+});
+
+// 👉 RESET VỀ TRANG 1 KHI NGƯỜI DÙNG TÌM KIẾM HOẶC ĐỔI TAB/THÁNG
+watch([activeTab, searchKeyword, selectedMonth], () => {
+    currentPage.value = 1;
+});
+
 const pendingCount = computed(() =>
-    userOrders.value.filter(o => o.status === 'pending' || o.status === undefined || o.status === null).length
+    userOrders.value.filter(o => {
+        let matchMonth = true;
+        if (selectedMonth.value) {
+            const d = new Date(o.created_at);
+            matchMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === selectedMonth.value;
+        }
+        return matchMonth && (o.status === 'pending' || !o.status);
+    }).length
 );
 
 const awaitingCount = computed(() =>
-    userOrders.value.filter(o => o.status === 'awaiting_confirmation').length
+    userOrders.value.filter(o => {
+        let matchMonth = true;
+        if (selectedMonth.value) {
+            const d = new Date(o.created_at);
+            matchMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === selectedMonth.value;
+        }
+        return matchMonth && o.status === 'awaiting_confirmation';
+    }).length
 );
 
 const completedCount = computed(() =>
-    userOrders.value.filter(o => o.status === 'completed').length
+    userOrders.value.filter(o => {
+        let matchMonth = true;
+        if (selectedMonth.value) {
+            const d = new Date(o.created_at);
+            matchMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === selectedMonth.value;
+        }
+        return matchMonth && o.status === 'completed';
+    }).length
 );
 
 function formatDate(dateString) {
@@ -184,7 +243,6 @@ async function viewOrderDetails(orderId) {
     try {
         const res = await axios.get(`http://localhost:3000/orders/${orderId}`);
         selectedOrder.value = res.data;
-        console.log("Chi tiết đơn hàng:", res.data);
     } catch (err) {
         console.error("Lỗi lấy chi tiết đơn hàng:", err);
         alert("Không thể lấy chi tiết đơn hàng");
@@ -197,12 +255,8 @@ async function confirmReceived(orderId) {
     try {
         await axios.put(`http://localhost:3000/orders/${orderId}/confirm-received`);
         alert("Cảm ơn bạn! Đơn hàng đã hoàn thành.");
-        // Update order status in list
         const order = userOrders.value.find(o => o.id === orderId);
-        if (order) {
-            order.status = 'completed';
-        }
-        // Close modal if it's the current order
+        if (order) order.status = 'completed';
         if (selectedOrder.value?.order.id === orderId) {
             selectedOrder.value.order.status = 'completed';
         }
@@ -389,6 +443,38 @@ onMounted(fetchUserOrders);
 
 .btn-confirm:hover {
     background-color: #059669;
+}
+
+/* 👉 CSS STYLE CHO THANH PHÂN TRANG */
+.pagination {
+    margin-top: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+}
+
+.pagination button {
+    padding: 8px 16px;
+    border: 1px solid #cbd5e1;
+    background: white;
+    color: #334155;
+    cursor: pointer;
+    border-radius: 6px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.pagination button:hover:not(:disabled) {
+    background-color: #3b82f6;
+    /* Xanh lam đồng bộ với giao diện user */
+    color: white;
+    border-color: #3b82f6;
+}
+
+.pagination button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .modal-items-table tfoot td {

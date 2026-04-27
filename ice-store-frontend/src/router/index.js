@@ -13,6 +13,10 @@ import AdminCustoms from "../admins/AdminCustoms.vue"
 import AdminOrder from "../admins/AdminOrder.vue";
 import AdminMember from "../admins/AdminMember.vue";
 import DashBoard from '../admins/DashBoard.vue';
+import Profile from '../views/Profile.vue';
+import ChangePassword from '../views/ChangePassword.vue';
+import AdminRecycleBin from '../admins/AdminRecycleBin.vue';
+import ForgotPassword from '../views/ForgotPassword.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -27,10 +31,14 @@ const router = createRouter({
     { path: '/admin/products', component: AdminProducts, meta: { requiresAdmin: true } },
     { path: '/admin/customers', component: AdminCustoms, meta: { requiresAdmin: true } },
     { path: '/admin/orders', component: AdminOrder, meta: { requiresAdmin: true } },
+    { path: '/admin/recycle-bin', component: AdminRecycleBin, meta: { requiresAdmin: true } },
     { path: '/admin/members', component: AdminMember, meta: { requiresSupervisor: true }},
     { path: '/admin/dashboard', component: DashBoard, meta: { requiresAdmin: true }},
     { path: '/register', component: Register },
-    { path: '/cart', component: Cart }
+    { path: '/cart', component: Cart },
+    { path: '/profile', component: Profile },
+    { path: '/change-password', component: ChangePassword },
+    { path: '/forgot-password', component: ForgotPassword }
   ]
 })
 
@@ -60,6 +68,40 @@ router.beforeEach((to, from) => {
 
   // Mặc định cho phép các route không yêu cầu quyền đi tiếp
   return true; // Thay cho next() ở cuối file
+});
+
+router.beforeEach((to, from, next) => {
+    // Lấy thông tin quyền từ localStorage (lúc đăng nhập đã lưu)
+    const role = localStorage.getItem('role');
+    const isSuper = localStorage.getItem('is_supervisor') === '1';
+
+    // Nếu cố tình vào khu vực Admin
+    if (to.path.startsWith('/admin')) {
+        
+        // 1. Khách vãng lai hoặc Customer -> Đá ra trang login
+        if (!role || role === 'customer') {
+            return next('/login');
+        }
+
+        // 2. Phân quyền Staff (Chỉ được vào trang Quản lý đơn hàng)
+        if (role === 'staff') {
+            if (to.path !== '/admin/orders') {
+                alert("🔒 Lỗi quyền: Nhân viên (Staff) chỉ được phép truy cập Quản lý đơn hàng!");
+                return next('/admin/orders'); // Ép quay lại trang đơn hàng
+            }
+        }
+
+        // 3. Phân quyền Admin thường (Không được vào trang Members)
+        if (role === 'admin' && !isSuper) {
+            if (to.path === '/admin/members') {
+                alert("🔒 Lỗi quyền: Chỉ Super Admin mới được quản lý nhân sự!");
+                return next('/admin/products'); // Ép quay lại trang sản phẩm
+            }
+        }
+    }
+    
+    // Nếu pass hết các vòng kiểm tra trên thì cho phép đi tiếp
+    next();
 });
 
 export default router

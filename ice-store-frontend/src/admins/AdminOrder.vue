@@ -1,5 +1,4 @@
 <template>
-    <!-- TABS -->
     <div class="tabs">
         <button @click="activeTab = 'pending'" :class="['tab-btn', { active: activeTab === 'pending' }]">
             Danh sách chờ giao ({{ pendingCount }})
@@ -12,15 +11,16 @@
         </button>
     </div>
 
-    <!-- SEARCH -->
     <div class="toolbar">
         <input v-model="searchKeyword" placeholder="Tìm kiếm theo tên khách hoặc ID đơn..." class="search-input" />
 
-        <input type="date" v-model="selectedDate" class="date-input">
-        <button v-if="selectedDate" @click="selectedDate = ''" class="btn gray clear-btn">Xóa lọc</button>
+        <input type="month" v-model="selectedMonth" class="date-input"
+            style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+
+        <button v-if="selectedMonth" @click="selectedMonth = ''" class="btn gray clear-btn">Xem tất cả thời
+            gian</button>
     </div>
 
-    <!-- ORDERS TABLE -->
     <div class="table-container">
         <table class="orders-table">
             <thead>
@@ -37,12 +37,13 @@
                     <td colspan="5" class="text-center">Đang tải...</td>
                 </tr>
                 <tr v-else-if="paginatedOrders.length === 0">
-                    <td colspan="5" class="text-center">Không có đơn hàng</td>
+                    <td colspan="5" class="text-center">Không có đơn hàng nào trong tháng này.</td>
                 </tr>
                 <tr v-for="order in paginatedOrders" v-else :key="order.id">
                     <td>#{{ order.id }}</td>
                     <td>{{ order.username }}</td>
-                    <td>{{ Number(order.total).toLocaleString('vi-VN') }} VND</td>
+                    <td style="color: #b45309; font-weight: bold;">{{ Number(order.total).toLocaleString('vi-VN') }} VND
+                    </td>
                     <td>{{ formatDate(order.created_at) }}</td>
                     <td class="actions">
                         <button @click="viewOrder(order.id)" class="btn yellow">Chi tiết</button>
@@ -62,20 +63,12 @@
         </table>
     </div>
 
-    <!-- PAGINATION -->
-    <div class="pagination">
-        <button :disabled="currentPage === 1" @click="currentPage--">
-            Prev
-        </button>
-
+    <div class="pagination" v-if="totalPages > 0">
+        <button :disabled="currentPage === 1" @click="currentPage--">Prev</button>
         <span>Trang {{ currentPage }} / {{ totalPages }}</span>
-
-        <button :disabled="currentPage === totalPages" @click="currentPage++">
-            Next
-        </button>
+        <button :disabled="currentPage === totalPages" @click="currentPage++">Next</button>
     </div>
 
-    <!-- ORDER DETAIL MODAL -->
     <div v-if="selectedOrder" class="modal-overlay" @click="selectedOrder = null">
         <div class="modal-content" @click.stop>
             <h2>Chi tiết đơn hàng #{{ selectedOrder.order.id }}</h2>
@@ -99,7 +92,6 @@
                 </div>
             </div>
 
-            <!-- Order Items -->
             <h3>Danh sách sản phẩm</h3>
             <table class="modal-items-table">
                 <thead>
@@ -130,7 +122,7 @@
             </table>
 
             <div class="modal-actions">
-                <button @click="selectedOrder = null" class="btn gray">Đóng</button>
+                <button @click="selectedOrder = null" class="btn gray">Đóng cửa sổ</button>
             </div>
         </div>
     </div>
@@ -147,7 +139,11 @@ const loading = ref(false);
 const currentPage = ref(1);
 const itemsPerPage = 8;
 const activeTab = ref('pending');
-const selectedDate = ref("");
+
+// 👉 TẠO BIẾN LƯU THÁNG MẶC ĐỊNH LÀ THÁNG HIỆN TẠI (Định dạng YYYY-MM)
+const today = new Date();
+const currentYearMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+const selectedMonth = ref(currentYearMonth);
 
 async function fetchOrders() {
     loading.value = true;
@@ -176,44 +172,67 @@ const filteredOrdersByTab = computed(() => {
     });
 });
 
-// Lọc theo tìm kiếm
+// Lọc theo tìm kiếm VÀ theo Tháng
 const filteredOrders = computed(() => {
     return filteredOrdersByTab.value.filter(o => {
+        // Lọc Text
         const matchKeyword =
             o.id.toString().includes(searchKeyword.value) ||
-            o.username.toLowerCase().includes(searchKeyword.value.toLowerCase())
-            ;
-        let matchDate = true;
-        if (selectedDate.value) {
+            o.username.toLowerCase().includes(searchKeyword.value.toLowerCase());
+
+        // Lọc Tháng
+        let matchMonth = true;
+        if (selectedMonth.value) { // Có chọn tháng
             const orderDate = new Date(o.created_at);
             const year = orderDate.getFullYear();
             const month = String(orderDate.getMonth() + 1).padStart(2, '0');
-            const day = String(orderDate.getDate()).padStart(2, '0');
+            const formattedOrderMonth = `${year}-${month}`;
 
-            const formattedOrderDate = `${year}-${month}-${day}`;
-
-            matchDate = formattedOrderDate === selectedDate.value;
+            matchMonth = (formattedOrderMonth === selectedMonth.value);
         }
-        return matchKeyword && matchDate;
+
+        return matchKeyword && matchMonth;
     });
 });
 
-watch([activeTab, searchKeyword, selectedDate], () => {
+watch([activeTab, searchKeyword, selectedMonth], () => {
     currentPage.value = 1; // Reset về trang 1 khi thay đổi bộ lọc
 });
 
 
-// Đếm số đơn hàng theo trạng thái
+// Đếm số đơn hàng theo trạng thái (CHỈ ĐẾM CÁC ĐƠN ĐANG HIỂN THỊ THEO THÁNG VÀ TÌM KIẾM)
+// Sửa lại logic đếm để nó thay đổi linh hoạt theo tháng bạn đang chọn
 const pendingCount = computed(() =>
-    orders.value.filter(o => o.status === 'pending' || o.status === undefined || o.status === null).length
+    orders.value.filter(o => {
+        let matchMonth = true;
+        if (selectedMonth.value) {
+            const d = new Date(o.created_at);
+            matchMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === selectedMonth.value;
+        }
+        return matchMonth && (o.status === 'pending' || !o.status);
+    }).length
 );
 
 const awaitingCount = computed(() =>
-    orders.value.filter(o => o.status === 'awaiting_confirmation').length
+    orders.value.filter(o => {
+        let matchMonth = true;
+        if (selectedMonth.value) {
+            const d = new Date(o.created_at);
+            matchMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === selectedMonth.value;
+        }
+        return matchMonth && o.status === 'awaiting_confirmation';
+    }).length
 );
 
 const completedCount = computed(() =>
-    orders.value.filter(o => o.status === 'completed').length
+    orders.value.filter(o => {
+        let matchMonth = true;
+        if (selectedMonth.value) {
+            const d = new Date(o.created_at);
+            matchMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === selectedMonth.value;
+        }
+        return matchMonth && o.status === 'completed';
+    }).length
 );
 
 // Tổng số trang

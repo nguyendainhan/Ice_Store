@@ -1,35 +1,44 @@
 <template>
     <nav class="nav-container">
 
-        <!-- Logo -->
         <div class="logo">
             <router-link to="/shop" class="logo-text">IceStore</router-link>
         </div>
 
-        <!-- Hamburger Menu (Mobile) -->
         <button class="hamburger" @click="isMenuOpen = !isMenuOpen" v-if="isMobile">
             <span></span>
             <span></span>
             <span></span>
         </button>
 
-        <!-- Sidebar (Menu + Auth) -->
         <div class="sidebar" :class="{ active: isMenuOpen }">
-            <!-- Menu -->
             <div class="menu">
                 <router-link to="/shop" @click="isMenuOpen = false">Shop</router-link>
                 <router-link to="/cart" @click="isMenuOpen = false">Cart</router-link>
                 <router-link to="/orders" @click="isMenuOpen = false">Orders</router-link>
             </div>
 
-            <!-- User Section -->
-            <div class="auth-section">
-                <span class="welcome">
-                    Xin chào, {{ username }}
-                </span>
-                <button @click="logout" class="btn-logout">
-                    Logout
-                </button>
+            <div class="auth-section" ref="userDropdownRef">
+                <div class="user-dropdown-toggle" @click="isUserMenuOpen = !isUserMenuOpen">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    <span class="welcome-text">{{ username }}</span>
+                </div>
+
+                <div class="dropdown-menu" :class="{ 'show': isUserMenuOpen }">
+                    <router-link to="/profile" class="dropdown-item" @click="closeMenus">
+                        Thông tin người dùng
+                    </router-link>
+                    <router-link to="/change-password" class="dropdown-item" @click="closeMenus">
+                        Đổi mật khẩu
+                    </router-link>
+                    <button @click="logout" class="dropdown-item btn-logout">
+                        Đăng xuất
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -37,7 +46,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { username as userNameState, role as roleState } from "../stores/user.js";
 
@@ -46,8 +55,25 @@ const username = userNameState;
 const isMenuOpen = ref(false);
 const isMobile = ref(false);
 
+// Biến quản lý trạng thái bật/tắt của Dropdown user
+const isUserMenuOpen = ref(false);
+const userDropdownRef = ref(null);
+
 function checkMobileSize() {
     isMobile.value = typeof window !== "undefined" && window.innerWidth <= 768;
+}
+
+// Hàm đóng tất cả menu
+function closeMenus() {
+    isUserMenuOpen.value = false;
+    isMenuOpen.value = false;
+}
+
+// Hàm xử lý click ra ngoài để tự động đóng dropdown
+function handleClickOutside(event) {
+    if (userDropdownRef.value && !userDropdownRef.value.contains(event.target)) {
+        isUserMenuOpen.value = false;
+    }
 }
 
 function logout() {
@@ -61,7 +87,7 @@ function logout() {
     userNameState.value = "";
     roleState.value = "";
 
-    isMenuOpen.value = false;
+    closeMenus();
 
     // Chuyển về trang chính
     router.push("/login");
@@ -69,13 +95,22 @@ function logout() {
 
 onMounted(() => {
     checkMobileSize();
+    // Lắng nghe sự kiện click ra ngoài màn hình
+    document.addEventListener("click", handleClickOutside);
+
     // Đóng menu khi resize window
     window.addEventListener("resize", () => {
         checkMobileSize();
         if (window.innerWidth > 768) {
             isMenuOpen.value = false;
+            isUserMenuOpen.value = false; // Tự động đóng dropdown khi xoay ngang điện thoại
         }
     });
+});
+
+onUnmounted(() => {
+    // Nhớ gỡ bỏ sự kiện khi component bị hủy để tránh rò rỉ bộ nhớ
+    document.removeEventListener("click", handleClickOutside);
 });
 </script>
 
@@ -156,37 +191,91 @@ onMounted(() => {
     color: #38bdf8;
 }
 
-/* AUTH SECTION */
+/* ===== AUTH SECTION CỦA BẠN ĐÂY ===== */
 .auth-section {
+    position: relative;
+    /* Để dropdown menu canh theo vị trí này */
+}
+
+/* Nút bấm bật tắt Dropdown */
+.user-dropdown-toggle {
     display: flex;
-    gap: 20px;
     align-items: center;
-}
-
-/* Welcome text */
-.welcome {
-    font-size: 16px;
-    font-weight: 500;
-}
-
-/* Logout Button */
-.btn-logout {
-    padding: 10px 20px;
-    background-color: #dc2626;
-    color: white;
-    border: none;
-    border-radius: 6px;
+    gap: 8px;
+    padding: 8px 16px;
+    background-color: #334155;
+    border-radius: 20px;
     cursor: pointer;
-    font-weight: 500;
-    font-size: 16px;
     transition: background-color 0.3s ease;
 }
 
-.btn-logout:hover {
-    background-color: #b91c1c;
+.user-dropdown-toggle:hover {
+    background-color: #475569;
 }
 
-/* RESPONSIVE - TABLET & MOBILE */
+.welcome-text {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+/* Box Dropdown Menu */
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 15px);
+    /* Cách mép dưới của nút 1 chút */
+    right: 0;
+    background-color: #ffffff;
+    border-radius: 8px;
+    min-width: 200px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    /* Hiệu ứng mượt mà khi ẩn/hiện */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+}
+
+.dropdown-menu.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+/* Các thẻ a và button trong Dropdown */
+.dropdown-item {
+    padding: 12px 20px;
+    text-decoration: none;
+    color: #333;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.dropdown-item:hover {
+    background-color: #f1f5f9;
+    color: #38bdf8;
+}
+
+.btn-logout {
+    border-top: 1px solid #e2e8f0;
+    color: #dc2626;
+}
+
+.btn-logout:hover {
+    background-color: #fef2f2;
+    color: #b91c1c;
+}
+
+/* ===== RESPONSIVE - TABLET & MOBILE ===== */
 @media (max-width: 768px) {
     .nav-container {
         padding: 12px 20px;
@@ -196,30 +285,10 @@ onMounted(() => {
         font-size: 24px;
     }
 
-    /* Reduce gaps on tablet */
-    .sidebar {
-        gap: 15px;
-    }
-
-    .menu {
-        gap: 15px;
-    }
-
-    .auth-section {
-        gap: 10px;
-    }
-
-    .btn-logout {
-        padding: 8px 12px;
-        font-size: 14px;
-    }
-
-    /* Show hamburger menu */
     .hamburger {
         display: flex;
     }
 
-    /* Sidebar wrapper (dropdown) */
     .sidebar {
         position: fixed;
         top: 100%;
@@ -232,22 +301,23 @@ onMounted(() => {
         overflow: hidden;
         transition: max-height 0.3s ease;
         width: 100%;
+        align-items: stretch;
+        /* Stretch full width */
     }
 
     .sidebar.active {
         max-height: 600px;
     }
 
-    /* Menu on mobile */
     .menu {
         flex-direction: column;
         gap: 0;
-        padding: 20px;
+        padding: 10px 20px;
         border-bottom: 1px solid #334155;
     }
 
     .menu a {
-        padding: 10px 0;
+        padding: 15px 0;
         border-bottom: 1px solid #334155;
         display: block;
     }
@@ -258,41 +328,58 @@ onMounted(() => {
 
     /* Auth section on mobile */
     .auth-section {
-        flex-direction: column;
-        gap: 10px;
         padding: 20px;
     }
 
-    .welcome {
-        font-size: 12px;
+    .user-dropdown-toggle {
+        justify-content: center;
+        background-color: transparent;
+        padding: 0 0 15px 0;
+        border-radius: 0;
+    }
+
+    .user-dropdown-toggle:hover {
+        background-color: transparent;
+    }
+
+    /* Đổi giao diện dropdown trên mobile thành danh sách thả thẳng xuống */
+    .dropdown-menu {
+        position: static;
+        box-shadow: none;
+        background-color: transparent;
+        min-width: 100%;
+
+        /* Ghi đè hiệu ứng ở desktop */
+        display: none;
+        opacity: 1;
+        visibility: visible;
+        transform: none;
+        border-top: 1px solid #334155;
+        padding-top: 10px;
+    }
+
+    .dropdown-menu.show {
+        display: flex;
+    }
+
+    .dropdown-item {
+        color: #cbd5e1;
+        padding: 12px 0;
+    }
+
+    .dropdown-item:hover {
+        background-color: transparent;
+        color: white;
     }
 
     .btn-logout {
-        width: 100%;
-        text-align: center;
-    }
-}
-
-@media (max-width: 480px) {
-    .nav-container {
-        padding: 15px 20px;
+        border-top: none;
+        color: #ef4444;
     }
 
-    .logo {
-        font-size: 24px;
-    }
-
-    .menu a {
-        font-size: 14px;
-    }
-
-    .welcome {
-        font-size: 13px;
-    }
-
-    .btn-logout {
-        padding: 8px 16px;
-        font-size: 14px;
+    .btn-logout:hover {
+        background-color: transparent;
+        color: #dc2626;
     }
 }
 </style>

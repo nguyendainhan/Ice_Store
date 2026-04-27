@@ -30,7 +30,12 @@
                         <td>{{ formatDate(member.created_at) }}</td>
                         <td class="actions">
                             <button @click="editMember(member)" class="btn yellow">Sửa</button>
-                            <button @click="deleteMember(member.id)" class="btn red">Xóa</button>
+
+                            <button v-if="String(member.id) !== String(currentUserId)" @click="deleteMember(member.id)"
+                                class="btn red">Xóa</button>
+
+                            <span v-else style="color: #10b981; font-weight: bold; font-size: 13px; padding: 6px;">(Là
+                                bạn)</span>
                         </td>
                     </tr>
                 </tbody>
@@ -95,6 +100,7 @@ const showForm = ref(false);
 const editingId = ref(null);
 const currentPage = ref(1);
 const itemsPerPage = 10;
+const currentUserId = localStorage.getItem("user_id");
 
 const form = ref({
     username: "",
@@ -218,10 +224,17 @@ async function saveMember() {
 }
 
 async function deleteMember(id) {
+    const userId = localStorage.getItem("user_id");
+
+    // CHẶN NGAY NẾU TỰ XÓA CHÍNH MÌNH
+    if (String(id) === String(userId)) {
+        alert("Lỗi: Bạn không thể tự xóa tài khoản của chính mình!");
+        return;
+    }
+
     if (!confirm("Bạn chắc chắn muốn xóa nhân viên này?")) return;
 
     try {
-        const userId = localStorage.getItem("user_id");
         await axios.delete(`http://localhost:3000/members/${id}`, {
             headers: { "user_id": userId }
         });

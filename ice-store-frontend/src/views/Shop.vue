@@ -7,7 +7,7 @@
             <div v-for="p in products" :key="p.id" class="product-card">
                 <img :src="p.image" alt="product image" class="product-image" />
                 <h2 class="product-name">{{ p.name }}</h2>
-                <p class="product-price">{{ p.price.toLocaleString('vi-VN') }} VND</p>
+                <p class="product-price">{{ Number(p.price).toLocaleString('vi-VN') }} VND</p>
                 <div class="quantity-section">
                     <label for="qty">Số lượng:</label>
                     <input type="number" :id="`qty-${p.id}`" v-model.number="quantities[p.id]" min="1"
@@ -116,9 +116,7 @@ onMounted(fetchProducts);
     font-weight: 600;
     font-size: 18px;
     margin-bottom: 8px;
-    max-height: 40px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    max-height: 30px;
 }
 
 .product-price {
