@@ -17,7 +17,7 @@ async function login() {
 
     loading.value = true;
     try {
-        const res = await axios.post("http://localhost:3000/login", {
+        const res = await axios.post("https://icestore-api.onrender.com/login", {
             username: username.value,
             password: password.value,
         });

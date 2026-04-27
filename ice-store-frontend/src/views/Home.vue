@@ -65,7 +65,7 @@ const products = ref([]);
 // Lấy sản phẩm từ server
 async function fetchProducts() {
     try {
-        const res = await axios.get("http://localhost:3000/products");
+        const res = await axios.get("https://icestore-api.onrender.com/products");
         // SỬA: Gán vào products.value thay vì fetchProducts.value
         products.value = res.data.slice(0, 3);
     } catch (err) {
@@ -83,7 +83,7 @@ async function addToCart(product) {
     }
 
     try {
-        await axios.post("http://localhost:3000/cart", {
+        await axios.post("https://icestore-api.onrender.com/cart", {
             user_id: userId,
             product_id: product.id,
             quantity: 1

@@ -97,7 +97,7 @@ const itemsPerPage = 10;
 
 async function fetchCustomers() {
     try {
-        const res = await axios.get("http://localhost:3000/customers");
+        const res = await axios.get("https://icestore-api.onrender.com/customers");
         customers.value = res.data;
     } catch (err) {
         console.error("Lỗi lấy danh sách khách hàng:", err);
@@ -145,7 +145,7 @@ function formatDate(dateString) {
 async function deleteCustomer(id) {
     if (confirm("Bạn có chắc muốn xóa vĩnh viễn khách hàng này cùng toàn bộ đơn hàng của họ?")) {
         try {
-            await axios.delete(`http://localhost:3000/customers/${id}`);
+            await axios.delete(`https://icestore-api.onrender.com/customers/${id}`);
             alert("Xóa khách hàng thành công");
 
             // Trở về trang 1 nếu xóa hết item ở trang cuối

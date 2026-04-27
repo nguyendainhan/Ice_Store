@@ -77,7 +77,7 @@ const newProduct = ref({ name: "", price: 0, image: "" });
 const editProduct = ref(null);
 
 async function fetchProducts() {
-    const res = await axios.get("http://localhost:3000/products");
+    const res = await axios.get("https://icestore-api.onrender.com/products");
     products.value = res.data;
 }
 import { computed } from "vue";
@@ -132,7 +132,7 @@ async function addProduct() {
         formData.append("price", newProduct.value.price);
         formData.append("image", newProduct.value.imageFile);
 
-        await axios.post("http://localhost:3000/products", formData, {
+        await axios.post("https://icestore-api.onrender.com/products", formData, {
             headers: { "Content-Type": "multipart/form-data" }
         });
         alert("Thêm sản phẩm thành công");
@@ -161,7 +161,7 @@ async function saveEdit() {
             formData.append("image", editProduct.value.imageFile);
         }
 
-        await axios.put(`http://localhost:3000/products/${editProduct.value.id}`, formData, {
+        await axios.put(`https://icestore-api.onrender.com/products/${editProduct.value.id}`, formData, {
             headers: { "Content-Type": "multipart/form-data" }
         });
         alert("Cập nhật sản phẩm thành công");
@@ -175,7 +175,7 @@ async function saveEdit() {
 
 async function deleteProduct(id) {
     if (confirm("Bạn có chắc muốn xóa sản phẩm này?")) {
-        await axios.delete(`http://localhost:3000/products/${id}`);
+        await axios.delete(`https://icestore-api.onrender.com/products/${id}`);
         fetchProducts();
     }
 }

@@ -32,7 +32,7 @@ const quantities = ref({});
 
 async function fetchProducts() {
     try {
-        const res = await axios.get("http://localhost:3000/products");
+        const res = await axios.get("https://icestore-api.onrender.com/products");
         products.value = res.data;
         // Khởi tạo quantity = 1 cho mỗi sản phẩm
         products.value.forEach(p => {
@@ -59,7 +59,7 @@ async function addToCart(product) {
     }
 
     try {
-        await axios.post("http://localhost:3000/cart", {
+        await axios.post("https://icestore-api.onrender.com/cart", {
             user_id: userId,
             product_id: product.id,
             quantity: qty

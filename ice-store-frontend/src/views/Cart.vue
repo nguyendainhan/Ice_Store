@@ -18,7 +18,7 @@ const saveAsDefault = ref(false);
 async function fetchUserProfile() {
     if (!userId) return;
     try {
-        const res = await axios.get("http://localhost:3000/profile", {
+        const res = await axios.get("https://icestore-api.onrender.com/profile", {
             headers: { user_id: userId }
         });
         if (res.data) {
@@ -44,7 +44,7 @@ async function fetchCart() {
     errorMessage.value = "";
     try {
         console.log("Lấy giỏ hàng cho user:", userId);
-        const res = await axios.get(`http://localhost:3000/cart/${userId}`);
+        const res = await axios.get(`https://icestore-api.onrender.com/cart/${userId}`);
         console.log("Dữ liệu giỏ hàng:", res.data);
         cartItems.value = res.data || [];
     } catch (err) {
@@ -57,7 +57,7 @@ async function fetchCart() {
 
 // Xóa sản phẩm khỏi giỏ hàng
 async function removeItem(id) {
-    await axios.delete(`http://localhost:3000/cart/${id}`);
+    await axios.delete(`https://icestore-api.onrender.com/cart/${id}`);
     fetchCart();
 }
 
@@ -65,7 +65,7 @@ async function removeItem(id) {
 async function updateQuantity(item, newQty) {
     if (newQty < 1) return;
     const diff = newQty - item.quantity; // tính số lượng thay đổi
-    await axios.post("http://localhost:3000/cart", {
+    await axios.post("https://icestore-api.onrender.com/cart", {
         user_id: userId,
         product_id: item.product_id,
         quantity: diff
@@ -103,7 +103,7 @@ async function checkout() {
 
     try {
         // 1. Tạo đơn hàng
-        const res = await axios.post("http://localhost:3000/orders", {
+        const res = await axios.post("https://icestore-api.onrender.com/orders", {
             user_id: userId,
             items: items,
             total: total,
@@ -113,7 +113,7 @@ async function checkout() {
 
         // 2. NẾU KHÁCH CHỌN LƯU MẶC ĐỊNH -> Cập nhật Profile
         if (saveAsDefault.value) {
-            await axios.put(`http://localhost:3000/profile`, {
+            await axios.put(`https://icestore-api.onrender.com/profile`, {
                 full_name: fullName.value,
                 email: email.value,
                 phone: phoneNumber.value,
@@ -127,7 +127,7 @@ async function checkout() {
 
         // 3. Xóa giỏ hàng
         for (const item of cartItems.value) {
-            await axios.delete(`http://localhost:3000/cart/${item.id}`);
+            await axios.delete(`https://icestore-api.onrender.com/cart/${item.id}`);
         }
         fetchCart();
     } catch (err) {

@@ -127,7 +127,7 @@ CREATE TABLE `products` (
 
 LOCK TABLES `products` WRITE;
 /*!40000 ALTER TABLE `products` DISABLE KEYS */;
-INSERT INTO `products` VALUES (1,'Đá viên 10kg',25000.00,'https://tse4.mm.bing.net/th/id/OIP.UD7-aoQyqpklqtT3P167kQHaFe?pid=Api&P=0&h=180'),(2,'Đá cây',30000.00,'https://tse3.mm.bing.net/th/id/OIP.dVNbxgvGIauLA7lp-PGRUAHaFj?pid=Api&P=0&h=180'),(4,'Đá viên 1kg',7000.00,'https://tse3.mm.bing.net/th/id/OIP.Hy_tIpoAleyjKnZJ-Q7OkwHaHa?pid=Api&P=0&h=180'),(5,'Đá bào',20000.00,'https://tse4.mm.bing.net/th/id/OIP.QOudfEYqVsaBEeuMfbzkTQHaFj?pid=Api&P=0&h=180'),(7,'Đá bi 5kg',15000.00,'http://localhost:3000/1771905108017-783181302.jpg'),(8,'Đá ok',15000.00,'http://localhost:3000/1776824644847-952360819.png');
+INSERT INTO `products` VALUES (1,'Đá viên 10kg',25000.00,'https://tse4.mm.bing.net/th/id/OIP.UD7-aoQyqpklqtT3P167kQHaFe?pid=Api&P=0&h=180'),(2,'Đá cây',30000.00,'https://tse3.mm.bing.net/th/id/OIP.dVNbxgvGIauLA7lp-PGRUAHaFj?pid=Api&P=0&h=180'),(4,'Đá viên 1kg',7000.00,'https://tse3.mm.bing.net/th/id/OIP.Hy_tIpoAleyjKnZJ-Q7OkwHaHa?pid=Api&P=0&h=180'),(5,'Đá bào',20000.00,'https://tse4.mm.bing.net/th/id/OIP.QOudfEYqVsaBEeuMfbzkTQHaFj?pid=Api&P=0&h=180'),(7,'Đá bi 5kg',15000.00,'https://icestore-api.onrender.com/1771905108017-783181302.jpg'),(8,'Đá ok',15000.00,'https://icestore-api.onrender.com/1776824644847-952360819.png');
 /*!40000 ALTER TABLE `products` ENABLE KEYS */;
 UNLOCK TABLES;
 

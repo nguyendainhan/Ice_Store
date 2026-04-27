@@ -150,7 +150,7 @@ async function fetchUserOrders() {
 
     loading.value = true;
     try {
-        const res = await axios.get("http://localhost:3000/orders");
+        const res = await axios.get("https://icestore-api.onrender.com/orders");
         userOrders.value = res.data.filter(o => o.user_id == userId);
     } catch (err) {
         console.error("Lỗi lấy đơn hàng:", err);
@@ -241,7 +241,7 @@ function formatDate(dateString) {
 
 async function viewOrderDetails(orderId) {
     try {
-        const res = await axios.get(`http://localhost:3000/orders/${orderId}`);
+        const res = await axios.get(`https://icestore-api.onrender.com/orders/${orderId}`);
         selectedOrder.value = res.data;
     } catch (err) {
         console.error("Lỗi lấy chi tiết đơn hàng:", err);
@@ -253,7 +253,7 @@ async function confirmReceived(orderId) {
     if (!confirm("Xác nhận bạn đã nhận đúng hàng?")) return;
 
     try {
-        await axios.put(`http://localhost:3000/orders/${orderId}/confirm-received`);
+        await axios.put(`https://icestore-api.onrender.com/orders/${orderId}/confirm-received`);
         alert("Cảm ơn bạn! Đơn hàng đã hoàn thành.");
         const order = userOrders.value.find(o => o.id === orderId);
         if (order) order.status = 'completed';

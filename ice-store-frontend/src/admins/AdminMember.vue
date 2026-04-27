@@ -121,7 +121,7 @@ async function fetchMembers() {
             return;
         }
 
-        const res = await axios.get("http://localhost:3000/members", {
+        const res = await axios.get("https://icestore-api.onrender.com/members", {
             headers: {
                 "user_id": userId
             }
@@ -199,7 +199,7 @@ async function saveMember() {
 
         if (editingId.value) {
             // Update
-            await axios.put(`http://localhost:3000/members/${editingId.value}`, {
+            await axios.put(`https://icestore-api.onrender.com/members/${editingId.value}`, {
                 email: form.value.email,
                 role: form.value.role,
                 password: form.value.password || undefined
@@ -207,7 +207,7 @@ async function saveMember() {
             alert("Cập nhật nhân viên thành công!");
         } else {
             // Create
-            await axios.post("http://localhost:3000/members", {
+            await axios.post("https://icestore-api.onrender.com/members", {
                 username: form.value.username,
                 email: form.value.email,
                 password: form.value.password,
@@ -235,7 +235,7 @@ async function deleteMember(id) {
     if (!confirm("Bạn chắc chắn muốn xóa nhân viên này?")) return;
 
     try {
-        await axios.delete(`http://localhost:3000/members/${id}`, {
+        await axios.delete(`https://icestore-api.onrender.com/members/${id}`, {
             headers: { "user_id": userId }
         });
         alert("Xóa nhân viên thành công!");

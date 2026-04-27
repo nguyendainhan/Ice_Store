@@ -17,7 +17,7 @@ async function resetPassword() {
 
     loading.value = true;
     try {
-        const res = await axios.post("http://localhost:3000/forgot-password", {
+        const res = await axios.post("https://icestore-api.onrender.com/forgot-password", {
             username: username.value,
             email: email.value,
             new_password: newPassword.value,

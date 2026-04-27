@@ -85,7 +85,7 @@ onUnmounted(() => {
 
 async function checkOverdueOrders() {
     try {
-        const res = await axios.get("http://localhost:3000/orders/overdue");
+        const res = await axios.get("https://icestore-api.onrender.com/orders/overdue");
         overdueCount.value = res.data.overdueCount;
     } catch (error) {
         console.error("Lỗi lấy thông báo:", error);

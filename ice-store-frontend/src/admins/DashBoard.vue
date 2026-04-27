@@ -51,7 +51,7 @@ let revenueChart = null;
 async function fetchOrders() {
     loading.value = true;
     try {
-        const res = await axios.get("http://localhost:3000/orders");
+        const res = await axios.get("https://icestore-api.onrender.com/orders");
         orders.value = res.data.filter((order) => order.status === "completed");
     } catch (err) {
         console.error("Lỗi lấy đơn hàng:", err);

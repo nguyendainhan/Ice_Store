@@ -148,7 +148,7 @@ const selectedMonth = ref(currentYearMonth);
 async function fetchOrders() {
     loading.value = true;
     try {
-        const res = await axios.get("http://localhost:3000/orders");
+        const res = await axios.get("https://icestore-api.onrender.com/orders");
         orders.value = res.data;
         console.log("Danh sách đơn hàng:", res.data);
     } catch (err) {
@@ -254,7 +254,7 @@ function formatDate(dateString) {
 
 async function viewOrder(orderId) {
     try {
-        const res = await axios.get(`http://localhost:3000/orders/${orderId}`);
+        const res = await axios.get(`https://icestore-api.onrender.com/orders/${orderId}`);
         selectedOrder.value = res.data;
         console.log("Chi tiết đơn hàng:", res.data);
     } catch (err) {
@@ -267,7 +267,7 @@ async function confirmDelivery(orderId) {
     if (!confirm("Xác nhận đã giao đơn hàng này?")) return;
 
     try {
-        await axios.put(`http://localhost:3000/orders/${orderId}/confirm`);
+        await axios.put(`https://icestore-api.onrender.com/orders/${orderId}/confirm`);
         alert("Đơn hàng đã được xác nhận giao");
         // Update order status in list
         const order = orders.value.find(o => o.id === orderId);

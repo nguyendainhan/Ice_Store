@@ -43,7 +43,7 @@ const loading = ref(false);
 async function fetchTrash() {
     loading.value = true;
     try {
-        const res = await axios.get("http://localhost:3000/products/trash");
+        const res = await axios.get("https://icestore-api.onrender.com/products/trash");
         trashedProducts.value = res.data;
     } catch (err) {
         console.error("Lỗi lấy dữ liệu thùng rác:", err);
@@ -56,7 +56,7 @@ async function restoreProduct(id) {
     if (!confirm("Bạn có chắc chắn muốn khôi phục sản phẩm này để bán lại không?")) return;
 
     try {
-        await axios.put(`http://localhost:3000/products/${id}/restore`);
+        await axios.put(`https://icestore-api.onrender.com/products/${id}/restore`);
         alert("Khôi phục thành công!");
         fetchTrash(); // Load lại danh sách thùng rác
     } catch (err) {

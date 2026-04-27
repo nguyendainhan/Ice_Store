@@ -22,7 +22,7 @@ async function changePassword() {
 
     loading.value = true;
     try {
-        await axios.put("http://localhost:3000/change-password", {
+        await axios.put("https://icestore-api.onrender.com/change-password", {
             old_password: oldPassword.value,
             new_password: newPassword.value
         }, {

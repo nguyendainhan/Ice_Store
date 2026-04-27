@@ -19,7 +19,7 @@ async function fetchProfile() {
     }
 
     try {
-        const response = await axios.get(`http://localhost:3000/profile`, {
+        const response = await axios.get(`https://icestore-api.onrender.com/profile`, {
             headers: {
                 "Content-Type": "application/json",
                 "user_id": userId
@@ -44,7 +44,7 @@ async function updateProfile() {
 
     loading.value = true;
     try {
-        await axios.put(`http://localhost:3000/profile`, {
+        await axios.put(`https://icestore-api.onrender.com/profile`, {
             full_name: fullName.value,
             email: email.value,
             phone: phone.value,

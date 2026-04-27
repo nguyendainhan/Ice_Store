@@ -62,7 +62,7 @@ app.get("/products", (req, res) => {
 // Thêm sản phẩm mới
 app.post("/products", upload.single("image"), (req, res) => {
   const { name, price } = req.body;
-  const image = req.file ? `http://localhost:3000/${req.file.filename}` : "";
+  const image = req.file ? `https://icestore-api.onrender.com/${req.file.filename}` : "";
   
   if (!image) {
     return res.status(400).json({ message: "Vui lòng chọn ảnh" });
@@ -88,7 +88,7 @@ app.put("/products/:id", upload.single("image"), (req, res) => {
   
   // Nếu có upload ảnh mới, lưu path; nếu không, giữ ảnh cũ
   if (req.file) {
-    const image = `http://localhost:3000/${req.file.filename}`;
+    const image = `https://icestore-api.onrender.com/${req.file.filename}`;
     db.query(
       "UPDATE products SET name=?, price=?, image=? WHERE id=?",
       [name, price, image, id],

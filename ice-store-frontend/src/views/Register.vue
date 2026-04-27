@@ -50,7 +50,7 @@ async function register() {
 
     loading.value = true;
     try {
-        await axios.post("http://localhost:3000/register", {
+        await axios.post("https://icestore-api.onrender.com/register", {
             username: username.value,
             password: password.value,
             full_name: fullName.value,
