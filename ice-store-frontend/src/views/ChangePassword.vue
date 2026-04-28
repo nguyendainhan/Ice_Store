@@ -22,7 +22,7 @@ async function changePassword() {
 
     loading.value = true;
     try {
-        await axios.put("https://icestore-api.onrender.com/change-password", {
+        await axios.put(`${import.meta.env.VITE_API_URL}/change-password`, {
             old_password: oldPassword.value,
             new_password: newPassword.value
         }, {

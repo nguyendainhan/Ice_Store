@@ -7,6 +7,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const serverUrl = process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
 
 const app = express();
 app.use(cors());
@@ -14,25 +15,26 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb' }));
 
 // Cấu hình upload ảnh
-const uploadDir = "uploads";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname);
-    cb(null, uniqueName);
-  }
+// Cấu hình thông tin Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_NAME,
+  api_key: process.env.CLOUDINARY_KEY,
+  api_secret: process.env.CLOUDINARY_SECRET
 });
 
-const upload = multer({ storage });
+// Thiết lập nơi lưu trữ trên Cloudinary
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'ice_store_products', // Tên thư mục trên Cloudinary
+    allowed_formats: ['jpg', 'png', 'jpeg'],
+  },
+});
 
-// Serve static files
-app.use(express.static(uploadDir));
+const upload = multer({ storage: storage });
 
 // Kết nối MySQL
 const db = mysql.createConnection({
@@ -50,67 +52,105 @@ db.connect(err => {
   console.log("Connected to MySQL");
 });
 
-// === API sản phẩm ===
-// Lấy tất cả sản phẩm đang bán (is_deleted = 0)
-app.get("/products", (req, res) => {
-  db.query("SELECT * FROM products WHERE is_deleted = 0", (err, result) => {
-    if (err) return res.status(500).json({ message: "Lỗi lấy sản phẩm" });
-    res.json(result);
-  });
+// API DANH MỤC SẢN PHẨM (MỚI THÊM)
+app.get("/categories", (req, res) => {
+    db.query("SELECT * FROM categories", (err, result) => {
+        if (err) {
+            console.error("Lỗi lấy danh mục:", err);
+            return res.status(500).json({ message: "Lỗi hệ thống" });
+        }
+        res.json(result);
+    });
 });
 
-// Thêm sản phẩm mới
+app.post("/categories", (req, res) => {
+    const { name } = req.body;
+    db.query("INSERT INTO categories (name) VALUES (?)", [name], (err, result) => {
+        if (err) return res.status(500).json({ message: "Lỗi thêm danh mục" });
+        res.json({ message: "Thêm thành công", id: result.insertId });
+    });
+});
+
+
+// ==========================================
+// === API SẢN PHẨM (ĐÃ SỬA ĐỂ LỌC DANH MỤC) ===
+// ==========================================
+
+// Lấy tất cả sản phẩm đang bán (CÓ LỌC THEO CATEGORY_ID)
+app.get("/products", (req, res) => {
+    const category_id = req.query.category_id;
+    
+    let query = "SELECT * FROM products WHERE is_deleted = 0";
+    let params = [];
+
+    // Lọc theo category_id nếu có gửi lên từ Front-end
+    if (category_id) {
+        query += " AND category_id = ?";
+        params.push(category_id);
+    }
+
+    query += " ORDER BY id DESC"; // Mới nhất lên đầu
+
+    db.query(query, params, (err, result) => {
+        if (err) return res.status(500).json({ message: "Lỗi lấy sản phẩm" });
+        res.json(result);
+    });
+});
+
+// Thêm sản phẩm mới (Đã thêm biến category_id)
 app.post("/products", upload.single("image"), (req, res) => {
-  const { name, price } = req.body;
-  const image = req.file ? `https://icestore-api.onrender.com/${req.file.filename}` : "";
+  const { name, price, category_id } = req.body; // <--- Thêm category_id ở đây
+  const image = req.file ? req.file.path : ""; 
   
   if (!image) {
     return res.status(400).json({ message: "Vui lòng chọn ảnh" });
   }
   
+  // Đưa thêm cột category_id vào lệnh INSERT
   db.query(
-    "INSERT INTO products (name, price, image) VALUES (?,?,?)",
-    [name, price, image],
+    "INSERT INTO products (name, price, image, category_id) VALUES (?,?,?,?)",
+    [name, price, image, category_id || null], // Cho phép null nếu lỡ quên truyền
     (err, result) => {
       if (err) {
         console.error("Lỗi thêm sản phẩm:", err);
         return res.status(500).json({ message: "Lỗi thêm sản phẩm" });
       }
-      res.json({ message: "Thêm sản phẩm thành công", id: result.insertId });
+      res.json({ message: "Thêm sản phẩm thành công", id: result.insertId, imageUrl: image });
     }
   );
 });
 
-// Sửa sản phẩm
+// Sửa sản phẩm (Cập nhật cả danh mục)
 app.put("/products/:id", upload.single("image"), (req, res) => {
   const { id } = req.params;
-  const { name, price } = req.body;
+  const { name, price, category_id } = req.body; 
   
-  // Nếu có upload ảnh mới, lưu path; nếu không, giữ ảnh cũ
+  // NẾU CÓ UPLOAD ẢNH MỚI LÊN CLOUDINARY
   if (req.file) {
-    const image = `https://icestore-api.onrender.com/${req.file.filename}`;
+    const image = req.file.path; 
+    
     db.query(
-      "UPDATE products SET name=?, price=?, image=? WHERE id=?",
-      [name, price, image, id],
+      "UPDATE products SET name=?, price=?, image=?, category_id=? WHERE id=?",
+      [name, price, image, category_id || null, id],
       (err) => {
         if (err) {
           console.error("Lỗi sửa sản phẩm:", err);
           return res.status(500).json({ message: "Lỗi sửa sản phẩm" });
         }
-        res.json({ message: "Cập nhật sản phẩm thành công" });
+        res.json({ message: "Cập nhật sản phẩm thành công", imageUrl: image });
       }
     );
   } else {
-    // Chỉ cập nhật name và price, giữ image cũ
+    // NẾU KHÔNG ĐỔI ẢNH
     db.query(
-      "UPDATE products SET name=?, price=? WHERE id=?",
-      [name, price, id],
+      "UPDATE products SET name=?, price=?, category_id=? WHERE id=?",
+      [name, price, category_id || null, id],
       (err) => {
         if (err) {
           console.error("Lỗi sửa sản phẩm:", err);
           return res.status(500).json({ message: "Lỗi sửa sản phẩm" });
         }
-        res.json({ message: "Cập nhật sản phẩm thành công" });
+        res.json({ message: "Cập nhật thông tin thành công" });
       }
     );
   }
@@ -276,6 +316,30 @@ app.post("/reset-password", async (req, res) => {
     });
 });
 
+// API Cập nhật ảnh đại diện
+app.put("/profile/avatar", upload.single("avatar"), (req, res) => {
+    const { user_id } = req.headers; // Lấy ID người dùng từ Header
+
+    if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
+    if (!req.file) return res.status(400).json({ message: "Vui lòng chọn ảnh" });
+
+    // Link ảnh xịn từ Cloudinary
+    const avatarUrl = req.file.path;
+
+    // Cập nhật vào bảng users
+    const query = "UPDATE users SET avatar = ? WHERE id = ?";
+    db.query(query, [avatarUrl, user_id], (err) => {
+        if (err) {
+            console.error("Lỗi cập nhật avatar:", err);
+            return res.status(500).json({ message: "Lỗi hệ thống" });
+        }
+        res.json({ 
+            message: "Cập nhật ảnh đại diện thành công!", 
+            avatarUrl: avatarUrl 
+        });
+    });
+});
+
 // === Tạo đơn hàng ===
 app.post("/orders", (req, res) => {
   const { user_id, items, total, delivery_address, phone_number } = req.body;
@@ -351,7 +415,7 @@ app.get("/profile", (req, res) => {
     const { user_id } = req.headers;
     if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
 
-    db.query("SELECT full_name, email, phone, address FROM users WHERE id = ?", [user_id], (err, results) => {
+    db.query("SELECT full_name, email, phone, address, avatar FROM users WHERE id = ?", [user_id], (err, results) => {
         if (err) return res.status(500).json({ message: "Lỗi server" });
         if (results.length === 0) return res.status(404).json({ message: "Không tìm thấy user" });
         res.json(results[0]);

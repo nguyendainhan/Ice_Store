@@ -20,11 +20,8 @@
 
             <div class="auth-section" ref="userDropdownRef">
                 <div class="user-dropdown-toggle" @click="isUserMenuOpen = !isUserMenuOpen">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="12" cy="7" r="4"></circle>
-                    </svg>
+                    <img :src="userAvatar || `https://ui-avatars.com/api/?name=${username}&background=random`"
+                        class="nav-avatar" />
                     <span class="welcome-text">{{ username }}</span>
                 </div>
 
@@ -49,11 +46,13 @@
 import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { username as userNameState, role as roleState } from "../stores/user.js";
+import axios from "axios";
 
 const router = useRouter();
 const username = userNameState;
 const isMenuOpen = ref(false);
 const isMobile = ref(false);
+const userAvatar = ref("");
 
 // Biến quản lý trạng thái bật/tắt của Dropdown user
 const isUserMenuOpen = ref(false);
@@ -93,10 +92,28 @@ function logout() {
     router.push("/login");
 }
 
+// Hàm lấy thông tin Avatar từ Backend
+async function fetchUserAvatar() {
+    const userId = localStorage.getItem("user_id");
+    if (!userId) return;
+
+    try {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL}/profile`, {
+            headers: { "user_id": userId }
+        });
+        userAvatar.value = res.data.avatar || "";
+    } catch (error) {
+        console.error("Lỗi lấy avatar trên Navbar:", error);
+    }
+}
+
 onMounted(() => {
     checkMobileSize();
+    fetchUserAvatar();
     // Lắng nghe sự kiện click ra ngoài màn hình
     document.addEventListener("click", handleClickOutside);
+
+    window.addEventListener("avatar-updated", fetchUserAvatar);
 
     // Đóng menu khi resize window
     window.addEventListener("resize", () => {
@@ -111,6 +128,7 @@ onMounted(() => {
 onUnmounted(() => {
     // Nhớ gỡ bỏ sự kiện khi component bị hủy để tránh rò rỉ bộ nhớ
     document.removeEventListener("click", handleClickOutside);
+    window.removeEventListener("avatar-updated", fetchUserAvatar);
 });
 </script>
 
@@ -189,6 +207,15 @@ onUnmounted(() => {
 
 .menu a:hover {
     color: #38bdf8;
+}
+
+.nav-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid #38bdf8;
+    /* Viền màu xanh nhạt cho hợp tông với logo */
 }
 
 /* ===== AUTH SECTION CỦA BẠN ĐÂY ===== */

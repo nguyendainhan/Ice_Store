@@ -6,9 +6,40 @@ const fullName = ref("");
 const email = ref("");
 const phone = ref("");
 const address = ref("");
+const avatar = ref("");
 const loading = ref(false);
 
 const userId = localStorage.getItem("user_id");
+const selectedFile = ref(null);
+
+// Khi người dùng chọn file từ máy tính
+const onFileSelected = (event) => {
+    selectedFile.value = event.target.files[0];
+};
+
+// Gửi ảnh lên server
+const uploadAvatar = async () => {
+    const formData = new FormData();
+    formData.append("avatar", selectedFile.value);
+
+    try {
+        const res = await axios.put(`${import.meta.env.VITE_API_URL}/profile/avatar`, formData, {
+            headers: {
+                "Content-Type": "multipart/form-data",
+                "user_id": localStorage.getItem("user_id")
+            }
+        });
+
+        // SỬA LẠI DÒNG NÀY
+        avatar.value = res.data.avatarUrl;
+
+        alert("Thành công!");
+        window.dispatchEvent(new CustomEvent("avatar-updated"));
+    } catch (err) {
+        console.error(err);
+        alert("Lỗi khi tải ảnh lên");
+    }
+};
 
 async function fetchProfile() {
     console.log("ID đang gửi lên:", userId); // Thêm dòng này để test xem ID có bị rỗng không
@@ -19,7 +50,7 @@ async function fetchProfile() {
     }
 
     try {
-        const response = await axios.get(`https://icestore-api.onrender.com/profile`, {
+        const response = await axios.get(`${import.meta.env.VITE_API_URL}/profile`, {
             headers: {
                 "Content-Type": "application/json",
                 "user_id": userId
@@ -30,6 +61,7 @@ async function fetchProfile() {
         email.value = data.email || "";
         phone.value = data.phone || "";
         address.value = data.address || "";
+        avatar.value = data.avatar || "";
     } catch (error) {
         console.error("Lỗi khi lấy thông tin hồ sơ:", error);
         alert("Không thể tải thông tin hồ sơ. Vui lòng thử lại sau.");
@@ -44,7 +76,7 @@ async function updateProfile() {
 
     loading.value = true;
     try {
-        await axios.put(`https://icestore-api.onrender.com/profile`, {
+        await axios.put(`${import.meta.env.VITE_API_URL}/profile`, {
             full_name: fullName.value,
             email: email.value,
             phone: phone.value,
@@ -77,6 +109,12 @@ onMounted(() => {
             <p class="subtitle">Quản lý thông tin cá nhân để bảo mật tài khoản</p>
 
             <div class="form-grid">
+                <div class="avatar-section">
+                    <img :src="avatar || `https://ui-avatars.com/api/?name=${fullName}&background=random`"
+                        class="avatar-preview" />
+                    <input type="file" @change="onFileSelected" accept="image/*" />
+                    <button @click="uploadAvatar" :disabled="!selectedFile">Cập nhật ảnh</button>
+                </div>
                 <div class="form-group">
                     <label>Họ và tên</label>
                     <input type="text" v-model="fullName" placeholder="Nhập họ và tên" />

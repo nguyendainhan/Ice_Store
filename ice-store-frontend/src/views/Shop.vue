@@ -1,11 +1,25 @@
 <template>
     <div class="container">
-        <h1 class="title">🛒 Cửa hàng</h1>
+        <h1 class="title">🛒 Cửa hàng IceStore</h1>
 
-        <!-- Grid sản phẩm -->
-        <div class="product-grid">
+        <div class="category-filter">
+            <button class="category-btn" :class="{ active: selectedCategory === null }" @click="filterByCategory(null)">
+                Tất cả sản phẩm
+            </button>
+            <button v-for="cat in categories" :key="cat.id" class="category-btn"
+                :class="{ active: selectedCategory === cat.id }" @click="filterByCategory(cat.id)">
+                {{ cat.name }}
+            </button>
+        </div>
+
+        <div v-if="products.length === 0" class="empty-state">
+            <p>Hiện chưa có sản phẩm nào trong danh mục này.</p>
+        </div>
+
+        <div v-else class="product-grid">
             <div v-for="p in products" :key="p.id" class="product-card">
-                <img :src="p.image" alt="product image" class="product-image" />
+                <img :src="p.image || 'https://via.placeholder.com/200?text=No+Image'" alt="product image"
+                    class="product-image" />
                 <h2 class="product-name">{{ p.name }}</h2>
                 <p class="product-price">{{ Number(p.price).toLocaleString('vi-VN') }} VND</p>
                 <div class="quantity-section">
@@ -28,19 +42,46 @@ import { useRouter } from "vue-router";
 
 const router = useRouter();
 const products = ref([]);
+const categories = ref([]); // Biến lưu danh sách danh mục
+const selectedCategory = ref(null); // Biến lưu danh mục đang chọn (null = Tất cả)
 const quantities = ref({});
 
-async function fetchProducts() {
+// 1. Lấy danh sách danh mục từ Backend
+async function fetchCategories() {
     try {
-        const res = await axios.get("https://icestore-api.onrender.com/products");
+        const res = await axios.get(`${import.meta.env.VITE_API_URL}/categories`);
+        categories.value = res.data;
+    } catch (err) {
+        console.error("Lỗi lấy danh mục:", err);
+    }
+}
+
+// 2. Lấy sản phẩm (Có hỗ trợ lọc)
+async function fetchProducts(categoryId = null) {
+    try {
+        // Tạo URL, nếu có categoryId thì nối thêm vào
+        let url = `${import.meta.env.VITE_API_URL}/products`;
+        if (categoryId !== null) {
+            url += `?category_id=${categoryId}`;
+        }
+
+        const res = await axios.get(url);
         products.value = res.data;
-        // Khởi tạo quantity = 1 cho mỗi sản phẩm
+
+        // Khởi tạo quantity = 1 cho mỗi sản phẩm mới tải về
+        quantities.value = {}; // Reset giỏ tạm
         products.value.forEach(p => {
             quantities.value[p.id] = 1;
         });
     } catch (err) {
         console.error("Lỗi lấy sản phẩm:", err);
     }
+}
+
+// 3. Hàm xử lý khi người dùng bấm vào một nút danh mục
+function filterByCategory(categoryId) {
+    selectedCategory.value = categoryId; // Cập nhật trạng thái nút (Màu xanh)
+    fetchProducts(categoryId); // Gọi lại API để tải sản phẩm tương ứng
 }
 
 // Thêm vào giỏ (gửi lên server)
@@ -59,13 +100,12 @@ async function addToCart(product) {
     }
 
     try {
-        await axios.post("https://icestore-api.onrender.com/cart", {
+        await axios.post(`${import.meta.env.VITE_API_URL}/cart`, {
             user_id: userId,
             product_id: product.id,
             quantity: qty
         });
         alert(`${product.name} x${qty} đã được thêm vào giỏ`);
-        // Reset quantity về 1 sau khi thêm
         quantities.value[product.id] = 1;
     } catch (err) {
         console.error("Lỗi thêm giỏ hàng:", err);
@@ -73,20 +113,73 @@ async function addToCart(product) {
     }
 }
 
-onMounted(fetchProducts);
+// Tự động chạy khi mở trang
+onMounted(() => {
+    fetchCategories();
+    fetchProducts(); // Mặc định tải tất cả
+});
 </script>
 
 <style scoped>
 .container {
     padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
 }
 
 .title {
     font-size: 30px;
     font-weight: bold;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
     text-align: center;
+    color: #1e293b;
 }
+
+/* === CSS MỚI CHO THANH DANH MỤC === */
+.category-filter {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 30px;
+    flex-wrap: wrap;
+    /* Tự động rớt dòng trên điện thoại */
+}
+
+.category-btn {
+    padding: 10px 20px;
+    background-color: #f1f5f9;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    border-radius: 25px;
+    /* Bo tròn xịn xò */
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.category-btn:hover {
+    background-color: #e2e8f0;
+    color: #0f172a;
+}
+
+/* Hiệu ứng khi nút được chọn */
+.category-btn.active {
+    background-color: #38bdf8;
+    color: white;
+    border-color: #38bdf8;
+    box-shadow: 0 4px 6px rgba(56, 189, 248, 0.3);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 50px;
+    color: #64748b;
+    font-size: 18px;
+    background-color: #f8fafc;
+    border-radius: 8px;
+}
+
+/* ================================= */
 
 .product-grid {
     display: grid;
@@ -96,80 +189,93 @@ onMounted(fetchProducts);
 
 .product-card {
     border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    border-radius: 12px;
+    background: white;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     padding: 16px;
     display: flex;
     flex-direction: column;
-    height: 90%;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.product-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
 .product-image {
     width: 100%;
     height: 200px;
     object-fit: cover;
-    border-radius: 6px;
-    margin-bottom: 12px;
+    border-radius: 8px;
+    margin-bottom: 15px;
 }
 
 .product-name {
     font-weight: 600;
     font-size: 18px;
     margin-bottom: 8px;
-    max-height: 30px;
+    color: #1e293b;
+    /* Cắt bớt tên dài */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .product-price {
-    color: #b45309;
+    color: #dc2626;
+    /* Đỏ đô nổi bật */
     margin-bottom: 16px;
-    font-weight: bold;
+    font-weight: 700;
+    font-size: 16px;
 }
 
 .quantity-section {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 15px;
 }
 
 .quantity-section label {
     font-weight: 500;
     font-size: 14px;
+    color: #475569;
 }
 
 .quantity-input {
     width: 60px;
-    padding: 6px;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
+    padding: 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
     font-size: 14px;
     text-align: center;
 }
 
 .quantity-input:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
 }
 
 .btn-add-cart {
     margin-top: auto;
-    background-color: #3b82f6;
+    background-color: #38bdf8;
     color: white;
-    padding: 8px 16px;
-    border-radius: 6px;
+    padding: 10px 16px;
+    border-radius: 8px;
     border: none;
     cursor: pointer;
-    font-weight: 500;
-    transition: background-color 0.2s;
+    font-weight: 600;
+    font-size: 15px;
+    transition: all 0.2s ease;
 }
 
 .btn-add-cart:hover {
-    background-color: #2563eb;
+    background-color: #0284c7;
 }
 
 /* Responsive */
-/* Mobile: 1 cột */
 @media (max-width: 640px) {
     .container {
         padding: 16px;
@@ -178,19 +284,23 @@ onMounted(fetchProducts);
     .product-grid {
         grid-template-columns: 1fr;
     }
+
+    .category-btn {
+        font-size: 13px;
+        padding: 8px 15px;
+    }
 }
 
-/* Tablet: 2 cột */
 @media (min-width: 641px) and (max-width: 1024px) {
     .product-grid {
         grid-template-columns: repeat(2, 1fr);
     }
 }
 
-/* Laptop: 3 cột */
 @media (min-width: 1025px) {
     .product-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
+        /* Đổi thành 4 cột cho màn to */
     }
 }
 </style>

@@ -17,7 +17,7 @@ async function login() {
 
     loading.value = true;
     try {
-        const res = await axios.post("https://icestore-api.onrender.com/login", {
+        const res = await axios.post(`${import.meta.env.VITE_API_URL}/login`, {
             username: username.value,
             password: password.value,
         });
