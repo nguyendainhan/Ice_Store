@@ -131,6 +131,7 @@
 <script setup>
 import { ref, onMounted, computed, watch } from "vue";
 import axios from "axios";
+import { toast } from "vue3-toastify";
 
 const orders = ref([]);
 const selectedOrder = ref(null);
@@ -140,7 +141,6 @@ const currentPage = ref(1);
 const itemsPerPage = 8;
 const activeTab = ref('pending');
 
-// 👉 TẠO BIẾN LƯU THÁNG MẶC ĐỊNH LÀ THÁNG HIỆN TẠI (Định dạng YYYY-MM)
 const today = new Date();
 const currentYearMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 const selectedMonth = ref(currentYearMonth);
@@ -153,7 +153,7 @@ async function fetchOrders() {
         console.log("Danh sách đơn hàng:", res.data);
     } catch (err) {
         console.error("Lỗi lấy danh sách đơn hàng:", err);
-        alert("Không thể lấy danh sách đơn hàng");
+        toast.error("Không thể lấy danh sách đơn hàng");
     } finally {
         loading.value = false;
     }
@@ -259,7 +259,7 @@ async function viewOrder(orderId) {
         console.log("Chi tiết đơn hàng:", res.data);
     } catch (err) {
         console.error("Lỗi lấy chi tiết đơn hàng:", err);
-        alert("Không thể lấy chi tiết đơn hàng");
+        toast.error("Không thể lấy chi tiết đơn hàng");
     }
 }
 
@@ -268,7 +268,7 @@ async function confirmDelivery(orderId) {
 
     try {
         await axios.put(`${import.meta.env.VITE_API_URL}/orders/${orderId}/confirm`);
-        alert("Đơn hàng đã được xác nhận giao");
+        toast.success("Đơn hàng đã được xác nhận giao");
         // Update order status in list
         const order = orders.value.find(o => o.id === orderId);
         if (order) {
@@ -280,7 +280,7 @@ async function confirmDelivery(orderId) {
         }
     } catch (err) {
         console.error("Lỗi xác nhận giao đơn hàng:", err);
-        alert("Không thể xác nhận giao đơn hàng");
+        toast.error("Không thể xác nhận giao đơn hàng");
     }
 }
 

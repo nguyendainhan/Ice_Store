@@ -88,6 +88,7 @@
 <script setup>
 import { ref, onMounted, computed } from "vue";
 import axios from "axios";
+import { toast } from "vue3-toastify";
 
 const customers = ref([]);
 const searchKeyword = ref("");
@@ -101,7 +102,7 @@ async function fetchCustomers() {
         customers.value = res.data;
     } catch (err) {
         console.error("Lỗi lấy danh sách khách hàng:", err);
-        alert("Không thể lấy danh sách khách hàng: " + err.message);
+        toast.error("Không thể lấy danh sách khách hàng: " + err.message);
     }
 }
 
@@ -146,7 +147,7 @@ async function deleteCustomer(id) {
     if (confirm("Bạn có chắc muốn xóa vĩnh viễn khách hàng này cùng toàn bộ đơn hàng của họ?")) {
         try {
             await axios.delete(`${import.meta.env.VITE_API_URL}/customers/${id}`);
-            alert("Xóa khách hàng thành công");
+            toast.success("Xóa khách hàng thành công");
 
             // Trở về trang 1 nếu xóa hết item ở trang cuối
             if (paginatedCustomers.value.length === 1 && currentPage.value > 1) {
@@ -156,7 +157,7 @@ async function deleteCustomer(id) {
         } catch (err) {
             console.error("Lỗi xóa khách hàng:", err);
             const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message;
-            alert("Lỗi xóa khách hàng: " + errorMsg);
+            toast.error("Lỗi xóa khách hàng: " + errorMsg);
         }
     }
 }

@@ -92,6 +92,7 @@
 import { ref, computed, onMounted } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
+import { toast } from "vue3-toastify";
 
 const router = useRouter();
 const members = ref([]);
@@ -116,7 +117,7 @@ async function fetchMembers() {
 
         // Kiểm tra quyền supervisor
         if (isSupervisor !== "1") {
-            alert("Bạn không có quyền quản lý nhân viên");
+            toast.error("Bạn không có quyền quản lý nhân viên");
             router.push("/");
             return;
         }
@@ -131,10 +132,10 @@ async function fetchMembers() {
     } catch (err) {
         console.error("Lỗi lấy danh sách nhân viên:", err);
         if (err.response?.status === 403) {
-            alert("Bạn không có quyền quản lý nhân viên");
+            toast.error("Bạn không có quyền quản lý nhân viên");
             router.push("/");
         } else {
-            alert("Không thể lấy danh sách nhân viên: " + (err.response?.data?.message || err.message));
+            toast.error("Không thể lấy danh sách nhân viên: " + (err.response?.data?.message || err.message));
         }
     }
 }
@@ -184,12 +185,12 @@ function closeForm() {
 
 async function saveMember() {
     if (!form.value.username.trim()) {
-        alert("Vui lòng nhập username!");
+        toast.error("Vui lòng nhập username!");
         return;
     }
 
     if (!editingId.value && !form.value.password.trim()) {
-        alert("Vui lòng nhập mật khẩu!");
+        toast.error("Vui lòng nhập mật khẩu!");
         return;
     }
 
@@ -204,7 +205,7 @@ async function saveMember() {
                 role: form.value.role,
                 password: form.value.password || undefined
             }, config);
-            alert("Cập nhật nhân viên thành công!");
+            toast.success("Cập nhật nhân viên thành công!");
         } else {
             // Create
             await axios.post(`${import.meta.env.VITE_API_URL}/members`, {
@@ -213,13 +214,13 @@ async function saveMember() {
                 password: form.value.password,
                 role: form.value.role
             }, config);
-            alert("Thêm nhân viên thành công!");
+            toast.success("Thêm nhân viên thành công!");
         }
         closeForm();
         fetchMembers();
     } catch (err) {
         console.error("Lỗi lưu nhân viên:", err);
-        alert("Lỗi: " + (err.response?.data?.message || err.message));
+        toast.error("Lỗi: " + (err.response?.data?.message || err.message));
     }
 }
 
@@ -228,7 +229,7 @@ async function deleteMember(id) {
 
     // CHẶN NGAY NẾU TỰ XÓA CHÍNH MÌNH
     if (String(id) === String(userId)) {
-        alert("Lỗi: Bạn không thể tự xóa tài khoản của chính mình!");
+        toast.error("Lỗi: Bạn không thể tự xóa tài khoản của chính mình!");
         return;
     }
 
@@ -238,11 +239,11 @@ async function deleteMember(id) {
         await axios.delete(`${import.meta.env.VITE_API_URL}/members/${id}`, {
             headers: { "user_id": userId }
         });
-        alert("Xóa nhân viên thành công!");
+        toast.success("Xóa nhân viên thành công!");
         fetchMembers();
     } catch (err) {
         console.error("Lỗi xóa nhân viên:", err);
-        alert("Lỗi: " + (err.response?.data?.message || err.message));
+        toast.error("Lỗi: " + (err.response?.data?.message || err.message));
     }
 }
 

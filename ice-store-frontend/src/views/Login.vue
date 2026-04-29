@@ -3,6 +3,7 @@ import { ref } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
 import { username as userNameState, role as roleState } from "../stores/user.js";
+import { toast } from "vue3-toastify";
 
 const router = useRouter();
 const username = ref("");
@@ -11,7 +12,7 @@ const loading = ref(false);
 
 async function login() {
     if (!username.value || !password.value) {
-        alert("Vui lòng nhập username và password!");
+        toast.error("Vui lòng nhập username và password!");
         return;
     }
 
@@ -29,7 +30,7 @@ async function login() {
         localStorage.setItem("username", username.value);
         localStorage.setItem("is_supervisor", res.data.is_supervisor ? "1" : "0");
 
-        alert("Đăng nhập thành công");
+        toast.success("Đăng nhập thành công");
         userNameState.value = username.value;
         roleState.value = res.data.role;
 
@@ -41,7 +42,7 @@ async function login() {
         }
 
     } catch (err) {
-        alert(err.response?.data?.message || "Đăng nhập thất bại");
+        toast.error(err.response?.data?.message || "Đăng nhập thất bại");
     } finally {
         loading.value = false;
     }

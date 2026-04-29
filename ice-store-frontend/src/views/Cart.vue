@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
+import { toast } from "vue3-toastify"; // <-- IMPORT TOAST VÀO ĐÂY
 
 const router = useRouter();
 const cartItems = ref([]);
@@ -14,7 +15,7 @@ const fullName = ref("");
 const email = ref("");
 const saveAsDefault = ref(false);
 
-// Sửa lại hàm fetchUserProfile để lưu đủ data:
+// Lấy thông tin người dùng
 async function fetchUserProfile() {
     if (!userId) return;
     try {
@@ -24,8 +25,8 @@ async function fetchUserProfile() {
         if (res.data) {
             phoneNumber.value = res.data.phone || "";
             deliveryAddress.value = res.data.address || "";
-            fullName.value = res.data.full_name || ""; // Lưu tạm
-            email.value = res.data.email || "";        // Lưu tạm
+            fullName.value = res.data.full_name || "";
+            email.value = res.data.email || "";
         }
     } catch (err) {
         console.error("Lỗi lấy thông tin người dùng:", err);
@@ -35,7 +36,7 @@ async function fetchUserProfile() {
 // Lấy giỏ hàng theo user
 async function fetchCart() {
     if (!userId) {
-        errorMessage.value = "Vui lòng đăng nhập để xem giỏ hàng";
+        toast.warning("Vui lòng đăng nhập để xem giỏ hàng"); // Dùng Toast
         router.push("/login");
         return;
     }
@@ -43,9 +44,7 @@ async function fetchCart() {
     loading.value = true;
     errorMessage.value = "";
     try {
-        console.log("Lấy giỏ hàng cho user:", userId);
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/cart/${userId}`);
-        console.log("Dữ liệu giỏ hàng:", res.data);
         cartItems.value = res.data || [];
     } catch (err) {
         console.error("Lỗi lấy giỏ hàng:", err);
@@ -57,20 +56,29 @@ async function fetchCart() {
 
 // Xóa sản phẩm khỏi giỏ hàng
 async function removeItem(id) {
-    await axios.delete(`${import.meta.env.VITE_API_URL}/cart/${id}`);
-    fetchCart();
+    try {
+        await axios.delete(`${import.meta.env.VITE_API_URL}/cart/${id}`);
+        toast.success("Đã xóa sản phẩm khỏi giỏ hàng"); // Báo xóa thành công
+        fetchCart();
+    } catch (err) {
+        toast.error("Lỗi khi xóa sản phẩm!");
+    }
 }
 
 // Cập nhật số lượng
 async function updateQuantity(item, newQty) {
     if (newQty < 1) return;
-    const diff = newQty - item.quantity; // tính số lượng thay đổi
-    await axios.post(`${import.meta.env.VITE_API_URL}/cart`, {
-        user_id: userId,
-        product_id: item.product_id,
-        quantity: diff
-    });
-    fetchCart();
+    const diff = newQty - item.quantity;
+    try {
+        await axios.post(`${import.meta.env.VITE_API_URL}/cart`, {
+            user_id: userId,
+            product_id: item.product_id,
+            quantity: diff
+        });
+        fetchCart();
+    } catch (err) {
+        toast.error("Lỗi cập nhật số lượng");
+    }
 }
 
 // Tính tổng tiền
@@ -81,17 +89,17 @@ function calculateTotal() {
 // Thanh toán
 async function checkout() {
     if (cartItems.value.length === 0) {
-        alert("Giỏ hàng trống!");
+        toast.warning("Giỏ hàng của bạn đang trống!"); // Dùng Toast
         return;
     }
 
     if (!deliveryAddress.value.trim()) {
-        alert("Vui lòng nhập địa chỉ giao hàng!");
+        toast.warning("Vui lòng nhập địa chỉ giao hàng!"); // Dùng Toast
         return;
     }
 
     if (!phoneNumber.value.trim()) {
-        alert("Vui lòng nhập số điện thoại!");
+        toast.warning("Vui lòng nhập số điện thoại!"); // Dùng Toast
         return;
     }
 
@@ -123,7 +131,8 @@ async function checkout() {
             });
         }
 
-        alert("Thanh toán thành công! Đơn hàng #" + res.data.orderId);
+        // Báo thành công tuyệt đẹp
+        toast.success("Thanh toán thành công! Đơn hàng #" + res.data.orderId);
 
         // 3. Xóa giỏ hàng
         for (const item of cartItems.value) {
@@ -132,13 +141,13 @@ async function checkout() {
         fetchCart();
     } catch (err) {
         console.error("Lỗi thanh toán:", err);
-        alert("Thanh toán thất bại: " + err.message);
+        toast.error("Thanh toán thất bại: " + err.message); // Dùng Toast báo lỗi
     }
 }
 
 onMounted(() => {
     fetchCart();
-    fetchUserProfile(); // 👉 Gọi hàm lấy thông tin người dùng ngay khi tải trang
+    fetchUserProfile();
 });
 </script>
 

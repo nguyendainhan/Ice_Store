@@ -1,6 +1,7 @@
 <script setup>
 import axios from "axios";
 import { ref, onMounted } from "vue";
+import { toast } from "vue3-toastify";
 
 const fullName = ref("");
 const email = ref("");
@@ -33,11 +34,11 @@ const uploadAvatar = async () => {
         // SỬA LẠI DÒNG NÀY
         avatar.value = res.data.avatarUrl;
 
-        alert("Thành công!");
+        toast.success("Thành công!");
         window.dispatchEvent(new CustomEvent("avatar-updated"));
     } catch (err) {
         console.error(err);
-        alert("Lỗi khi tải ảnh lên");
+        toast.error("Lỗi khi tải ảnh lên");
     }
 };
 
@@ -45,7 +46,7 @@ async function fetchProfile() {
     console.log("ID đang gửi lên:", userId); // Thêm dòng này để test xem ID có bị rỗng không
 
     if (!userId || userId === "undefined") {
-        alert("Chưa có user_id, vui lòng đăng xuất và đăng nhập lại!");
+        toast.error("Chưa có user_id, vui lòng đăng xuất và đăng nhập lại!");
         return;
     }
 
@@ -64,13 +65,13 @@ async function fetchProfile() {
         avatar.value = data.avatar || "";
     } catch (error) {
         console.error("Lỗi khi lấy thông tin hồ sơ:", error);
-        alert("Không thể tải thông tin hồ sơ. Vui lòng thử lại sau.");
+        toast.error("Không thể tải thông tin hồ sơ. Vui lòng thử lại sau.");
     }
 }
 
 async function updateProfile() {
     if (!fullName.value || !email.value || !phone.value || !address.value) {
-        alert("Vui lòng điền đầy đủ thông tin!");
+        toast.error("Vui lòng điền đầy đủ thông tin!");
         return;
     }
 
@@ -88,10 +89,10 @@ async function updateProfile() {
             }
         });
 
-        alert("Cập nhật hồ sơ thành công!");
+        toast.success("Cập nhật hồ sơ thành công!");
     } catch (error) {
         console.error("Lỗi khi cập nhật hồ sơ:", error);
-        alert("Không thể cập nhật hồ sơ. Vui lòng thử lại sau.");
+        toast.error("Không thể cập nhật hồ sơ. Vui lòng thử lại sau.");
     } finally {
         loading.value = false;
     }

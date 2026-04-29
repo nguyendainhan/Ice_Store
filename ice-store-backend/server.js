@@ -438,6 +438,51 @@ app.post("/cart", (req, res) => {
     );
 });
 
+// Khách hàng gửi đánh giá mới
+app.post("/reviews", (req, res) => {
+    const { user_id, product_id, rating, comment } = req.body;
+
+    if (!user_id) return res.status(401).json({ message: "Vui lòng đăng nhập để đánh giá" });
+    if (!rating || rating < 1 || rating > 5) return res.status(400).json({ message: "Vui lòng chọn số sao hợp lệ (1-5)" });
+
+    // Lấy thời gian hiện tại chuẩn Đài Loan
+    const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' });
+
+    db.query(
+        "INSERT INTO reviews (product_id, user_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?)",
+        [product_id, user_id, rating, comment, createdAt],
+        (err, result) => {
+            if (err) {
+                console.error("Lỗi lưu đánh giá:", err);
+                return res.status(500).json({ message: "Lỗi hệ thống khi lưu đánh giá" });
+            }
+            res.json({ message: "Cảm ơn bạn đã đánh giá sản phẩm!" });
+        }
+    );
+});
+
+// Lấy danh sách đánh giá của một sản phẩm cụ thể
+app.get("/products/:id/reviews", (req, res) => {
+    const productId = req.params.id;
+
+    // Nối bảng reviews với users để lấy tên người đánh giá và avatar
+    const query = `
+        SELECT r.id, r.rating, r.comment, r.created_at, u.full_name, u.username, u.avatar 
+        FROM reviews r
+        JOIN users u ON r.user_id = u.id
+        WHERE r.product_id = ?
+        ORDER BY r.created_at DESC
+    `;
+
+    db.query(query, [productId], (err, results) => {
+        if (err) {
+            console.error("Lỗi lấy danh sách đánh giá:", err);
+            return res.status(500).json({ message: "Lỗi hệ thống" });
+        }
+        res.json(results);
+    });
+});
+
 // Lấy giỏ hàng theo user
 app.get("/cart/:user_id", (req, res) => {
     const { user_id } = req.params;

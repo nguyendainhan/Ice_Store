@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from "vue";
 import axios from "axios";
+import { toast } from "vue3-toastify";
 
 const oldPassword = ref("");
 const newPassword = ref("");
@@ -11,12 +12,12 @@ const userId = localStorage.getItem("user_id");
 
 async function changePassword() {
     if (!oldPassword.value || !newPassword.value || !confirmPassword.value) {
-        alert("Vui lòng điền đầy đủ thông tin!");
+        toast.error("Vui lòng điền đầy đủ thông tin!");
         return;
     }
 
     if (newPassword.value !== confirmPassword.value) {
-        alert("Mật khẩu mới không khớp!");
+        toast.error("Mật khẩu mới không khớp!");
         return;
     }
 
@@ -29,12 +30,12 @@ async function changePassword() {
             headers: { user_id: userId }
         });
 
-        alert("Đổi mật khẩu thành công!");
+        toast.success("Đổi mật khẩu thành công!");
         oldPassword.value = "";
         newPassword.value = "";
         confirmPassword.value = "";
     } catch (err) {
-        alert(err.response?.data?.message || "Đổi mật khẩu thất bại");
+        toast.error(err.response?.data?.message || "Đổi mật khẩu thất bại");
     } finally {
         loading.value = false;
     }

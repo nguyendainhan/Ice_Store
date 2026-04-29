@@ -121,10 +121,10 @@
 </template>
 
 <script setup>
-// 👉 Bổ sung thêm 'watch' vào import
 import { ref, onMounted, computed, watch } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
+import { toast } from "vue3-toastify"
 
 const router = useRouter();
 const userOrders = ref([]);
@@ -134,7 +134,7 @@ const searchKeyword = ref("");
 const activeTab = ref('pending');
 const userId = localStorage.getItem("user_id");
 
-// 👉 KHAI BÁO BIẾN PHÂN TRANG
+// KHAI BÁO BIẾN PHÂN TRANG
 const currentPage = ref(1);
 const itemsPerPage = 6; // Đặt 6 để grid hiển thị đẹp (bội số của 2 và 3)
 
@@ -154,6 +154,7 @@ async function fetchUserOrders() {
         userOrders.value = res.data.filter(o => o.user_id == userId);
     } catch (err) {
         console.error("Lỗi lấy đơn hàng:", err);
+        toast.error("Lỗi lấy đơn hàng");
     } finally {
         loading.value = false;
     }
@@ -245,7 +246,7 @@ async function viewOrderDetails(orderId) {
         selectedOrder.value = res.data;
     } catch (err) {
         console.error("Lỗi lấy chi tiết đơn hàng:", err);
-        alert("Không thể lấy chi tiết đơn hàng");
+        toast.error("Không thể lấy chi tiết đơn hàng");
     }
 }
 
@@ -254,7 +255,7 @@ async function confirmReceived(orderId) {
 
     try {
         await axios.put(`${import.meta.env.VITE_API_URL}/orders/${orderId}/confirm-received`);
-        alert("Cảm ơn bạn! Đơn hàng đã hoàn thành.");
+        toast.success("Cảm ơn bạn! Đơn hàng đã hoàn thành.");
         const order = userOrders.value.find(o => o.id === orderId);
         if (order) order.status = 'completed';
         if (selectedOrder.value?.order.id === orderId) {
@@ -262,7 +263,7 @@ async function confirmReceived(orderId) {
         }
     } catch (err) {
         console.error("Lỗi xác nhận nhận hàng:", err);
-        alert("Không thể xác nhận nhận hàng");
+        toast.error("Không thể xác nhận nhận hàng");
     }
 }
 

@@ -110,6 +110,7 @@
 <script setup>
 import { ref, onMounted, computed } from "vue";
 import axios from "axios";
+import { toast } from "vue3-toastify";
 
 const products = ref([]);
 const categories = ref([]);
@@ -192,7 +193,7 @@ const paginatedProducts = computed(() => {
 // Thêm sản phẩm mới
 async function addProduct() {
     if (!newProduct.value.name || !newProduct.value.price || !newProduct.value.imageFile || !newProduct.value.category_id) {
-        alert("Vui lòng điền tên, giá, chọn ảnh và danh mục!");
+        toast.error("Vui lòng điền tên, giá, chọn ảnh và danh mục!");
         return;
     }
     try {
@@ -206,12 +207,12 @@ async function addProduct() {
         await axios.post(`${import.meta.env.VITE_API_URL}/products`, formData, {
             headers: { "Content-Type": "multipart/form-data" }
         });
-        alert("Thêm sản phẩm thành công");
+        toast.success("Thêm sản phẩm thành công");
         newProduct.value = { name: "", price: 0, imageFile: null, category_id: "" };
         fetchProducts();
     } catch (err) {
         console.error("Lỗi thêm sản phẩm:", err);
-        alert(err.response?.data?.message || "Lỗi thêm sản phẩm");
+        toast.error(err.response?.data?.message || "Lỗi thêm sản phẩm");
     }
 }
 
@@ -222,7 +223,7 @@ function startEdit(p) {
 // Lưu sửa sản phẩm
 async function saveEdit() {
     if (!editProduct.value.name || !editProduct.value.price || !editProduct.value.category_id) {
-        alert("Vui lòng điền đủ tên, giá và danh mục");
+        toast.error("Vui lòng điền đủ tên, giá và danh mục");
         return;
     }
     try {
@@ -239,12 +240,12 @@ async function saveEdit() {
         await axios.put(`${import.meta.env.VITE_API_URL}/products/${editProduct.value.id}`, formData, {
             headers: { "Content-Type": "multipart/form-data" }
         });
-        alert("Cập nhật sản phẩm thành công");
+        toast.success("Cập nhật sản phẩm thành công");
         editProduct.value = null;
         fetchProducts();
     } catch (err) {
         console.error("Lỗi cập nhật sản phẩm:", err);
-        alert(err.response?.data?.message || "Lỗi cập nhật sản phẩm");
+        toast.error(err.response?.data?.message || "Lỗi cập nhật sản phẩm");
     }
 }
 

@@ -56,6 +56,7 @@
 import { ref, onMounted } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
+import { toast } from "vue3-toastify";
 
 // Khởi tạo router chuẩn
 const router = useRouter();
@@ -77,7 +78,7 @@ async function fetchProducts() {
 async function addToCart(product) {
     const userId = localStorage.getItem("user_id");
     if (!userId) {
-        alert("Vui lòng đăng nhập trước!");
+        toast.error("Vui lòng đăng nhập trước!");
         router.push("/login");
         return;
     }
@@ -88,9 +89,9 @@ async function addToCart(product) {
             product_id: product.id,
             quantity: 1
         });
-        alert("Đã thêm vào giỏ hàng");
+        toast.success("Đã thêm vào giỏ hàng");
     } catch (err) {
-        alert(err.response?.data?.message || "Thêm vào giỏ hàng thất bại");
+        toast.error(err.response?.data?.message || "Thêm vào giỏ hàng thất bại");
     }
 }
 

@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
+import { toast } from "vue3-toastify";
 
 const router = useRouter();
 const username = ref("");
@@ -11,7 +12,7 @@ const loading = ref(false);
 
 async function resetPassword() {
     if (!username.value || !email.value || !newPassword.value) {
-        alert("Vui lòng nhập đầy đủ Username, Email và Mật khẩu mới!");
+        toast.error("Vui lòng nhập đầy đủ Username, Email và Mật khẩu mới!");
         return;
     }
 
@@ -23,10 +24,10 @@ async function resetPassword() {
             new_password: newPassword.value,
         });
 
-        alert("Thành công: " + res.data.message);
+        toast.success("Thành công: " + res.data.message);
         router.push("/login"); // Đổi thành công thì tự động quay về trang Đăng nhập
     } catch (err) {
-        alert("Lỗi: " + (err.response?.data?.message || "Không thể khôi phục mật khẩu"));
+        toast.error("Lỗi: " + (err.response?.data?.message || "Không thể khôi phục mật khẩu"));
     } finally {
         loading.value = false;
     }

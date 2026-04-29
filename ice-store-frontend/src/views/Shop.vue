@@ -21,21 +21,71 @@
                 <img :src="p.image || 'https://via.placeholder.com/200?text=No+Image'" alt="product image"
                     class="product-image" />
                 <h2 class="product-name">{{ p.name }}</h2>
-                <p class="product-price">{{ Number(p.price).toLocaleString('vi-VN') }} VND</p>
-                <p class="product-stock" :style="{ color: p.stock > 0 ? '#10b981' : '#dc2626', fontWeight: 'bold' }">
-                    {{ p.stock > 0 ? `Còn hàng: ${p.stock}` : 'Đã hết hàng' }}
-                </p>
+
+                <div class="price-stock">
+                    <p class="product-price">{{ Number(p.price).toLocaleString('vi-VN') }} VND</p>
+                    <p class="product-stock" :style="{ color: p.stock > 0 ? '#10b981' : '#dc2626' }">
+                        {{ p.stock > 0 ? `Kho: ${p.stock}` : 'Hết hàng' }}
+                    </p>
+                </div>
 
                 <div class="quantity-section">
-                    <label for="qty">Số lượng:</label>
-                    <input type="number" :id="`qty-${p.id}`" v-model.number="quantities[p.id]" min="1" :max="p.stock"
+                    <label>Số lượng:</label>
+                    <input type="number" v-model.number="quantities[p.id]" min="1" :max="p.stock"
                         :disabled="p.stock === 0" class="quantity-input" />
                 </div>
 
-                <button @click="addToCart(p)" class="btn-add-cart" :disabled="p.stock === 0"
-                    :style="{ backgroundColor: p.stock === 0 ? '#94a3b8' : '' }">
-                    {{ p.stock === 0 ? 'Hết hàng' : 'Thêm vào giỏ' }}
-                </button>
+                <div class="action-buttons">
+                    <button @click="addToCart(p)" class="btn-add-cart" :disabled="p.stock === 0"
+                        :class="{ 'disabled-btn': p.stock === 0 }">
+                        Thêm vào giỏ
+                    </button>
+                    <button @click="openReviewModal(p)" class="btn-review">
+                        ⭐ Đánh giá
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showReviewModal" class="modal-overlay" @click="closeReviewModal">
+            <div class="modal-content review-modal" @click.stop>
+                <div class="modal-header">
+                    <h2>Đánh giá: {{ selectedProduct?.name }}</h2>
+                    <button class="close-btn" @click="closeReviewModal">×</button>
+                </div>
+
+                <div class="write-review-section">
+                    <h3>Viết đánh giá của bạn</h3>
+                    <div class="star-rating">
+                        <span v-for="star in 5" :key="star" @click="reviewForm.rating = star"
+                            :class="{ 'active': star <= reviewForm.rating }">★</span>
+                    </div>
+                    <textarea v-model="reviewForm.comment" placeholder="Sản phẩm dùng tốt không? Hãy chia sẻ nhé..."
+                        class="review-input"></textarea>
+                    <button @click="submitReview" class="btn-submit-review">Gửi đánh giá</button>
+                </div>
+
+                <div class="reviews-list">
+                    <h3>Bình luận từ khách hàng</h3>
+                    <p v-if="productReviews.length === 0" class="no-reviews">Chưa có đánh giá nào cho sản phẩm này. Hãy
+                        là người đầu tiên!</p>
+
+                    <div v-for="r in productReviews" :key="r.id" class="review-item">
+                        <img :src="r.avatar || `https://ui-avatars.com/api/?name=${r.username}&background=random`"
+                            class="reviewer-avatar" />
+                        <div class="review-content">
+                            <div class="review-header">
+                                <strong>{{ r.full_name || r.username }}</strong>
+                                <span class="review-date">{{ new Date(r.created_at).toLocaleDateString('vi-VN')
+                                }}</span>
+                            </div>
+                            <div class="review-stars">
+                                <span v-for="s in 5" :key="s" :class="{ 'active-star': s <= r.rating }">★</span>
+                            </div>
+                            <p class="review-text">{{ r.comment }}</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -45,14 +95,21 @@
 import { ref, onMounted } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
+import { toast } from "vue3-toastify"; // <-- IMPORT THƯ VIỆN UX XỊN SÒ
 
 const router = useRouter();
 const products = ref([]);
-const categories = ref([]); // Biến lưu danh sách danh mục
-const selectedCategory = ref(null); // Biến lưu danh mục đang chọn (null = Tất cả)
+const categories = ref([]);
+const selectedCategory = ref(null);
 const quantities = ref({});
 
-// 1. Lấy danh sách danh mục từ Backend
+// === STATE CHO ĐÁNH GIÁ ===
+const showReviewModal = ref(false);
+const selectedProduct = ref(null);
+const productReviews = ref([]);
+const reviewForm = ref({ rating: 5, comment: "" });
+
+// --- CÁC HÀM API SẢN PHẨM & DANH MỤC ---
 async function fetchCategories() {
     try {
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/categories`);
@@ -62,54 +119,45 @@ async function fetchCategories() {
     }
 }
 
-// 2. Lấy sản phẩm (Có hỗ trợ lọc)
 async function fetchProducts(categoryId = null) {
     try {
-        // Tạo URL, nếu có categoryId thì nối thêm vào
         let url = `${import.meta.env.VITE_API_URL}/products`;
-        if (categoryId !== null) {
-            url += `?category_id=${categoryId}`;
-        }
+        if (categoryId !== null) url += `?category_id=${categoryId}`;
 
         const res = await axios.get(url);
         products.value = res.data;
 
-        // Khởi tạo quantity = 1 cho mỗi sản phẩm mới tải về
-        quantities.value = {}; // Reset giỏ tạm
-        products.value.forEach(p => {
-            quantities.value[p.id] = 1;
-        });
+        quantities.value = {};
+        products.value.forEach(p => quantities.value[p.id] = 1);
     } catch (err) {
-        console.error("Lỗi lấy sản phẩm:", err);
+        toast.error("Không thể tải danh sách sản phẩm!");
     }
 }
 
-// 3. Hàm xử lý khi người dùng bấm vào một nút danh mục
 function filterByCategory(categoryId) {
-    selectedCategory.value = categoryId; // Cập nhật trạng thái nút (Màu xanh)
-    fetchProducts(categoryId); // Gọi lại API để tải sản phẩm tương ứng
+    selectedCategory.value = categoryId;
+    fetchProducts(categoryId);
 }
 
-// Thêm vào giỏ (gửi lên server)
+// --- THÊM GIỎ HÀNG (SỬ DỤNG TOAST) ---
 async function addToCart(product) {
     const userId = localStorage.getItem("user_id");
     if (!userId) {
-        alert("Vui lòng đăng nhập trước!");
+        toast.warning("Vui lòng đăng nhập để mua hàng!"); // UX Tốt hơn alert
         router.push("/login");
         return;
     }
 
     const qty = quantities.value[product.id] || 1;
 
-    // THÊM CHẶN SỐ LƯỢNG KHO TẠI ĐÂY
     if (qty > product.stock) {
-        alert(`Rất tiếc! Trong kho chỉ còn ${product.stock} sản phẩm.`);
-        quantities.value[product.id] = product.stock; // Tự động giảm số lượng về mức tối đa
+        toast.error(`Chỉ còn ${product.stock} sản phẩm trong kho!`);
+        quantities.value[product.id] = product.stock;
         return;
     }
 
     if (qty < 1) {
-        alert("Số lượng phải lớn hơn 0");
+        toast.warning("Số lượng phải lớn hơn 0");
         return;
     }
 
@@ -119,22 +167,72 @@ async function addToCart(product) {
             product_id: product.id,
             quantity: qty
         });
-        alert(`${product.name} x${qty} đã được thêm vào giỏ`);
+
+        // BÁO THÀNH CÔNG GÓC MÀN HÌNH MÀ KHÔNG CHẶN NGƯỜI DÙNG
+        toast.success(`Đã thêm ${qty} ${product.name} vào giỏ hàng!`);
         quantities.value[product.id] = 1;
     } catch (err) {
-        console.error("Lỗi thêm giỏ hàng:", err);
-        alert("Lỗi thêm vào giỏ hàng");
+        toast.error("Lỗi thêm vào giỏ hàng!");
     }
 }
 
-// Tự động chạy khi mở trang
+// === CÁC HÀM XỬ LÝ ĐÁNH GIÁ ===
+async function openReviewModal(product) {
+    selectedProduct.value = product;
+    showReviewModal.value = true;
+    reviewForm.value = { rating: 5, comment: "" }; // Reset form
+    await fetchReviews(product.id);
+}
+
+function closeReviewModal() {
+    showReviewModal.value = false;
+    selectedProduct.value = null;
+}
+
+async function fetchReviews(productId) {
+    try {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL}/products/${productId}/reviews`);
+        productReviews.value = res.data;
+    } catch (err) {
+        toast.error("Không thể tải bình luận!");
+    }
+}
+
+async function submitReview() {
+    const userId = localStorage.getItem("user_id");
+    if (!userId) {
+        toast.warning("Bạn cần đăng nhập để viết đánh giá!");
+        return;
+    }
+    if (!reviewForm.value.comment.trim()) {
+        toast.warning("Vui lòng viết nội dung đánh giá nhé!");
+        return;
+    }
+
+    try {
+        await axios.post(`${import.meta.env.VITE_API_URL}/reviews`, {
+            user_id: userId,
+            product_id: selectedProduct.value.id,
+            rating: reviewForm.value.rating,
+            comment: reviewForm.value.comment
+        });
+
+        toast.success("Cảm ơn bạn đã đánh giá!");
+        reviewForm.value.comment = ""; // Xóa form
+        await fetchReviews(selectedProduct.value.id); // Tải lại danh sách bình luận
+    } catch (err) {
+        toast.error("Có lỗi xảy ra khi gửi đánh giá.");
+    }
+}
+
 onMounted(() => {
     fetchCategories();
-    fetchProducts(); // Mặc định tải tất cả
+    fetchProducts();
 });
 </script>
 
 <style scoped>
+/* GIỮ LẠI CSS CŨ CỦA BẠN (container, title, category-filter, product-grid, v.v...) */
 .container {
     padding: 24px;
     max-width: 1200px;
@@ -149,14 +247,12 @@ onMounted(() => {
     color: #1e293b;
 }
 
-/* === CSS MỚI CHO THANH DANH MỤC === */
 .category-filter {
     display: flex;
     justify-content: center;
     gap: 12px;
     margin-bottom: 30px;
     flex-wrap: wrap;
-    /* Tự động rớt dòng trên điện thoại */
 }
 
 .category-btn {
@@ -165,10 +261,9 @@ onMounted(() => {
     color: #475569;
     border: 1px solid #cbd5e1;
     border-radius: 25px;
-    /* Bo tròn xịn xò */
     cursor: pointer;
     font-weight: 500;
-    transition: all 0.3s ease;
+    transition: all 0.3s;
 }
 
 .category-btn:hover {
@@ -176,12 +271,10 @@ onMounted(() => {
     color: #0f172a;
 }
 
-/* Hiệu ứng khi nút được chọn */
 .category-btn.active {
     background-color: #38bdf8;
     color: white;
     border-color: #38bdf8;
-    box-shadow: 0 4px 6px rgba(56, 189, 248, 0.3);
 }
 
 .empty-state {
@@ -193,23 +286,20 @@ onMounted(() => {
     border-radius: 8px;
 }
 
-/* ================================= */
-
 .product-grid {
     display: grid;
     gap: 24px;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
 }
 
 .product-card {
     border: 1px solid #e5e7eb;
     border-radius: 12px;
     background: white;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     padding: 16px;
     display: flex;
     flex-direction: column;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .product-card:hover {
@@ -230,18 +320,29 @@ onMounted(() => {
     font-size: 18px;
     margin-bottom: 8px;
     color: #1e293b;
-    /* Cắt bớt tên dài */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
+.price-stock {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
 .product-price {
     color: #dc2626;
-    /* Đỏ đô nổi bật */
-    margin-bottom: 16px;
     font-weight: 700;
     font-size: 16px;
+    margin: 0;
+}
+
+.product-stock {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
 }
 
 .quantity-section {
@@ -251,70 +352,236 @@ onMounted(() => {
     margin-bottom: 15px;
 }
 
-.quantity-section label {
-    font-weight: 500;
-    font-size: 14px;
-    color: #475569;
-}
-
 .quantity-input {
     width: 60px;
-    padding: 8px;
+    padding: 6px;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
-    font-size: 14px;
     text-align: center;
 }
 
-.quantity-input:focus {
-    outline: none;
-    border-color: #38bdf8;
-    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+/* CHỈNH LẠI HÀNG NÚT BẤM */
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: auto;
 }
 
-.btn-add-cart {
-    margin-top: auto;
-    background-color: #38bdf8;
-    color: white;
-    padding: 10px 16px;
+.btn-add-cart,
+.btn-review {
+    flex: 1;
+    padding: 10px 5px;
     border-radius: 8px;
     border: none;
     cursor: pointer;
     font-weight: 600;
-    font-size: 15px;
-    transition: all 0.2s ease;
+    font-size: 14px;
+    transition: all 0.2s;
+    color: white;
 }
 
-.btn-add-cart:hover {
+.btn-add-cart {
+    background-color: #38bdf8;
+}
+
+.btn-add-cart:hover:not(:disabled) {
     background-color: #0284c7;
 }
 
+.disabled-btn {
+    background-color: #94a3b8 !important;
+    cursor: not-allowed;
+}
+
+.btn-review {
+    background-color: #f59e0b;
+}
+
+.btn-review:hover {
+    background-color: #d97706;
+}
+
+/* === CSS MỚI CHO MODAL ĐÁNH GIÁ === */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+
+.review-modal {
+    background: white;
+    padding: 25px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 85vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 10px;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+    color: #1e293b;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: #64748b;
+}
+
+.write-review-section {
+    background: #f8fafc;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.write-review-section h3 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    color: #334155;
+}
+
+.star-rating {
+    margin-bottom: 10px;
+}
+
+.star-rating span {
+    font-size: 28px;
+    color: #cbd5e1;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.star-rating span.active {
+    color: #f59e0b;
+}
+
+.review-input {
+    width: 100%;
+    height: 80px;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    resize: none;
+    font-family: inherit;
+    margin-bottom: 10px;
+    box-sizing: border-box;
+}
+
+.btn-submit-review {
+    background: #10b981;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    width: 100%;
+}
+
+.reviews-list h3 {
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+    font-size: 18px;
+}
+
+.no-reviews {
+    color: #64748b;
+    font-style: italic;
+    text-align: center;
+}
+
+.review-item {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.reviewer-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.review-content {
+    flex: 1;
+    background: #f1f5f9;
+    padding: 12px;
+    border-radius: 8px;
+}
+
+.review-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+    font-size: 14px;
+}
+
+.review-date {
+    color: #64748b;
+    font-size: 12px;
+}
+
+.review-stars span {
+    color: #cbd5e1;
+    font-size: 14px;
+}
+
+.review-stars span.active-star {
+    color: #f59e0b;
+}
+
+.review-text {
+    margin: 8px 0 0 0;
+    font-size: 14px;
+    color: #334155;
+    line-height: 1.5;
+}
+
 /* Responsive */
-@media (max-width: 640px) {
-    .container {
-        padding: 16px;
-    }
-
+@media (max-width: 1024px) {
     .product-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .category-btn {
-        font-size: 13px;
-        padding: 8px 15px;
+        grid-template-columns: repeat(3, 1fr);
     }
 }
 
-@media (min-width: 641px) and (max-width: 1024px) {
+@media (max-width: 768px) {
     .product-grid {
         grid-template-columns: repeat(2, 1fr);
     }
 }
 
-@media (min-width: 1025px) {
+@media (max-width: 480px) {
     .product-grid {
-        grid-template-columns: repeat(4, 1fr);
-        /* Đổi thành 4 cột cho màn to */
+        grid-template-columns: 1fr;
+    }
+
+    .action-buttons {
+        flex-direction: column;
     }
 }
 </style>

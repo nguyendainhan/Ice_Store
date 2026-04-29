@@ -36,6 +36,7 @@
 <script setup>
 import { ref, onMounted } from "vue";
 import axios from "axios";
+import { toast } from "vue3-toastify";
 
 const trashedProducts = ref([]);
 const loading = ref(false);
@@ -57,10 +58,10 @@ async function restoreProduct(id) {
 
     try {
         await axios.put(`${import.meta.env.VITE_API_URL}/products/${id}/restore`);
-        alert("Khôi phục thành công!");
+        toast.success("Khôi phục thành công!");
         fetchTrash(); // Load lại danh sách thùng rác
     } catch (err) {
-        alert("Lỗi khôi phục sản phẩm");
+        toast.error("Lỗi khôi phục sản phẩm");
     }
 }
 

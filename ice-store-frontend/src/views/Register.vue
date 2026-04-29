@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
+import { toast } from "vue3-toastify";
 
 const router = useRouter();
 
@@ -18,11 +19,11 @@ const loading = ref(false);
 // --- CẬP NHẬT: Hàm gửi mã giả lập ---
 function sendVerificationCode() {
     if (!email.value && !phone.value) {
-        alert("Vui lòng nhập Email hoặc Số điện thoại để nhận mã!");
+        toast.error("Vui lòng nhập Email hoặc Số điện thoại để nhận mã!");
         return;
     }
 
-    alert("Hệ thống đang test. Mã xác nhận của bạn là: 123456");
+    toast.info("Hệ thống đang test. Mã xác nhận của bạn là: 123456");
 
     // Tự động điền luôn mã vào ô input để test cho lẹ
     verificationCode.value = "123456";
@@ -32,19 +33,19 @@ async function register() {
     // 1. Kiểm tra điền đủ thông tin
     if (!username.value || !password.value || !confirmPassword.value ||
         !fullName.value || !email.value || !phone.value || !address.value || !verificationCode.value) {
-        alert("Vui lòng điền đầy đủ thông tin!");
+        toast.error("Vui lòng điền đầy đủ thông tin!");
         return;
     }
 
     // 2. Kiểm tra mật khẩu khớp
     if (password.value !== confirmPassword.value) {
-        alert("Mật khẩu xác nhận không khớp!");
+        toast.error("Mật khẩu xác nhận không khớp!");
         return;
     }
 
     // --- CẬP NHẬT: Kiểm tra mã xác nhận cứng ---
     if (verificationCode.value !== "123456") {
-        alert("Mã xác nhận không chính xác! Vui lòng nhập 123456");
+        toast.error("Mã xác nhận không chính xác! Vui lòng nhập 123456");
         return;
     }
 
@@ -59,10 +60,10 @@ async function register() {
             address: address.value,
             verification_code: verificationCode.value // Bạn vẫn có thể gửi lên API nếu Backend cần log lại
         });
-        alert("Đăng ký thành công!");
+        toast.success("Đăng ký thành công!");
         router.push("/login");
     } catch (err) {
-        alert(err.response?.data?.message || "Đăng ký thất bại");
+        toast.error(err.response?.data?.message || "Đăng ký thất bại");
     } finally {
         loading.value = false;
     }

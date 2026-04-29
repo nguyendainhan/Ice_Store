@@ -42,6 +42,7 @@
 import { ref, onMounted, computed, nextTick } from "vue";
 import axios from "axios";
 import Chart from "chart.js/auto";
+import { toast } from "vue3-toastify";
 
 const orders = ref([]);
 const loading = ref(true);
@@ -55,6 +56,7 @@ async function fetchOrders() {
         orders.value = res.data.filter((order) => order.status === "completed");
     } catch (err) {
         console.error("Lỗi lấy đơn hàng:", err);
+        toast.error("Lỗi lấy đơn hàng");
     } finally {
         loading.value = false;
         await nextTick();
