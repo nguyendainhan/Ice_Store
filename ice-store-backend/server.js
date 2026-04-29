@@ -11,6 +11,24 @@ const nodemailer = require("nodemailer");
 const serverUrl = process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
 
 const app = express();
+
+// === CẤU HÌNH SOCKET.IO (MỚI THÊM) ===
+const http = require("http");
+const server = http.createServer(app);
+const { Server } = require("socket.io");
+
+const io = new Server(server, {
+    cors: {
+        origin: "*", // Cho phép mọi Frontend kết nối tới
+        methods: ["GET", "POST", "PUT", "DELETE"]
+    }
+});
+
+io.on("connection", (socket) => {
+    console.log("⚡ Có thiết bị vừa kết nối Socket: " + socket.id);
+});
+// ====================================
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb' }));
@@ -359,6 +377,13 @@ app.post("/orders", (req, res) => {
       if (err) return res.status(500).json({ message: "Lỗi tạo đơn hàng" });
 
       const orderId = result.insertId;
+
+      // === BẮT ĐẦU: PHÁT TÍN HIỆU SOCKET ĐẾN ADMIN ===
+      io.emit("new_order_alert", {
+          orderId: orderId,
+          total: total
+      });
+      // ==============================================
 
       items.forEach(item => {
         db.query(
@@ -984,8 +1009,8 @@ app.get("/import-logs", (req, res) => {
     });
 });
 
-// === Chạy server ===
+// === Chạy server (Đổi từ app.listen sang server.listen) ===
 const PORT = process.env.PORT || 3000; 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+server.listen(PORT, () => {
+  console.log(`🚀 Server & Socket.io running on port ${PORT}`);
 });

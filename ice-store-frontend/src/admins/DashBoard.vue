@@ -1,6 +1,9 @@
 <template>
     <div class="dashboard-container">
-        <h2>Báo Cáo Tài Chính & Lợi Nhuận</h2>
+        <div class="dashboard-header">
+            <h2>Báo Cáo Tài Chính & Lợi Nhuận</h2>
+            <button @click="exportToExcel" class="btn-export">📊 Xuất ra Excel</button>
+        </div>
 
         <div v-if="loading" class="loading">
             <div class="spinner"></div> Đang tổng hợp dữ liệu...
@@ -80,6 +83,7 @@ import { ref, onMounted, computed, nextTick } from "vue";
 import axios from "axios";
 import Chart from "chart.js/auto";
 import { toast } from "vue3-toastify";
+import * as XLSX from 'xlsx';
 
 const orders = ref([]);
 const importLogs = ref([]);
@@ -106,6 +110,53 @@ async function fetchData() {
         await nextTick();
         renderChart();
     }
+}
+
+// === HÀM XUẤT FILE EXCEL ===
+function exportToExcel() {
+    if (orders.value.length === 0 && importLogs.value.length === 0) {
+        toast.warning("Không có dữ liệu để xuất!");
+        return;
+    }
+
+    // Chuẩn bị dữ liệu Sheet 1: DOANH THU (Từ Đơn hàng)
+    const orderData = orders.value.map(o => ({
+        "Mã ĐH": o.id,
+        "Ngày đặt": new Date(o.created_at).toLocaleString('vi-VN'),
+        "Khách hàng": o.username || o.user_id,
+        "Tổng tiền (VND)": Number(o.total),
+        "Trạng thái": o.status === 'completed' ? 'Đã hoàn thành' : o.status
+    }));
+    const wsOrders = XLSX.utils.json_to_sheet(orderData);
+
+    // Chuẩn bị dữ liệu Sheet 2: CHI PHÍ (Từ Nhật ký nhập hàng)
+    const importData = importLogs.value.map(i => ({
+        "Mã Phiếu": i.id,
+        "Ngày nhập": new Date(i.created_at).toLocaleString('vi-VN'),
+        "Mã SP": i.product_id,
+        "Số lượng": i.quantity_added,
+        "Giá vốn (VND)": Number(i.import_price),
+        "Tổng chi phí (VND)": Number(i.total_cost),
+        "Ghi chú": i.note || ""
+    }));
+    const wsImports = XLSX.utils.json_to_sheet(importData);
+
+    // Tự động căn chỉnh độ rộng cột cho đẹp
+    const wscols = [{ wch: 10 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 30 }];
+    wsOrders['!cols'] = wscols;
+    wsImports['!cols'] = wscols;
+
+    // Gom các Sheet lại thành 1 file Excel (Workbook)
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, wsOrders, "Doanh Thu Bán Hàng");
+    XLSX.utils.book_append_sheet(wb, wsImports, "Chi Phí Nhập Kho");
+
+    // Tạo tên file chứa ngày tháng hiện tại và cho tải xuống
+    const todayStr = new Date().toLocaleDateString('vi-VN').replace(/\//g, '-');
+    const fileName = `Bao_Cao_Tai_Chinh_IceStore_${todayStr}.xlsx`;
+
+    XLSX.writeFile(wb, fileName);
+    toast.success("Đã xuất báo cáo Excel thành công!");
 }
 
 const now = new Date();
@@ -263,6 +314,45 @@ onMounted(() => {
     max-width: 1200px;
     margin: 0 auto;
     padding: 24px;
+}
+
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.dashboard-header h2 {
+    margin-bottom: 0;
+    /* Xóa margin cũ để cân bằng với nút */
+}
+
+.btn-export {
+    background-color: #10b981;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-export:hover {
+    background-color: #059669;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-export:active {
+    transform: translateY(0);
 }
 
 h2 {

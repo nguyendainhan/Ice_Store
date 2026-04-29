@@ -8,12 +8,14 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, onMounted } from "vue"; // Kiểm tra kỹ dòng này phải có onMounted
 import { useRoute } from "vue-router";
 import Navbar from "./components/Navbar.vue";
 import CustomerNavbar from "./components/CustomerNavbar.vue";
 import AdminNavbar from "./components/AdminNavbar.vue";
-import { username as userNameState, role as roleState } from "./stores/user.js";
+import { username as userNameState } from "./stores/user.js";
+import { toast } from "vue3-toastify";
+import { io } from "socket.io-client";
 
 const route = useRoute();
 
@@ -23,6 +25,29 @@ const isAdminRoute = computed(() => {
 
 const isLoggedIn = computed(() => {
   return userNameState.value && !route.path.startsWith("/admin");
+});
+
+onMounted(() => {
+  const userRole = localStorage.getItem("role");
+
+  if (userRole === 'admin' || userRole === 'staff') {
+    const socket = io(import.meta.env.VITE_API_URL);
+
+    socket.on("new_order_alert", (data) => {
+      try {
+        const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+        audio.play();
+      } catch (error) {
+        console.log("Trình duyệt chặn âm thanh");
+      }
+
+      toast.info(`🚨 CÓ ĐƠN HÀNG MỚI!\nĐơn #${data.orderId} - Trị giá: ${Number(data.total).toLocaleString('vi-VN')} VND`, {
+        autoClose: 10000,
+        position: "top-right",
+        icon: "🛒"
+      });
+    });
+  }
 });
 </script>
 

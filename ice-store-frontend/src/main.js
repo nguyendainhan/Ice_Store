@@ -12,5 +12,4 @@ app.use(Vue3Toastify, {
 });
 
 app.use(router)
-  .use(Vue3Toastify)
   .mount('#app')
