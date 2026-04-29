@@ -1,36 +1,73 @@
 <template>
     <div class="dashboard-container">
-        <h2>Thống kê doanh thu</h2>
+        <h2>Báo Cáo Tài Chính & Lợi Nhuận</h2>
 
-        <div v-if="loading" class="loading">Đang tải dữ liệu...</div>
+        <div v-if="loading" class="loading">
+            <div class="spinner"></div> Đang tổng hợp dữ liệu...
+        </div>
 
         <div v-else class="stats-grid">
             <div class="stat-card">
-                <div class="stat-title">Doanh thu hôm nay</div>
-                <div class="stat-value">{{ formatCurrency(revenue.today) }}</div>
-                <div class="stat-subtitle">{{ ordersCount.today }} đơn hàng</div>
+                <div class="stat-title">Hôm nay ({{ stats.today.orders }} đơn)</div>
+                <div class="stat-details">
+                    <div class="detail-row"><span>Doanh thu:</span> <span class="val rev">{{
+                        formatCurrency(stats.today.rev) }}</span></div>
+                    <div class="detail-row"><span>Chi phí:</span> <span class="val cost">{{
+                        formatCurrency(stats.today.cost) }}</span></div>
+                    <div class="divider"></div>
+                    <div class="detail-row total"><span>Lợi nhuận:</span> <span class="val prof"
+                            :class="{ 'loss': stats.today.prof < 0 }">{{ formatCurrency(stats.today.prof) }}</span>
+                    </div>
+                </div>
             </div>
 
             <div class="stat-card">
-                <div class="stat-title">Doanh thu tuần này</div>
-                <div class="stat-value">{{ formatCurrency(revenue.thisWeek) }}</div>
-                <div class="stat-subtitle">{{ ordersCount.thisWeek }} đơn hàng</div>
+                <div class="stat-title">Tuần này ({{ stats.thisWeek.orders }} đơn)</div>
+                <div class="stat-details">
+                    <div class="detail-row"><span>Doanh thu:</span> <span class="val rev">{{
+                        formatCurrency(stats.thisWeek.rev) }}</span></div>
+                    <div class="detail-row"><span>Chi phí:</span> <span class="val cost">{{
+                        formatCurrency(stats.thisWeek.cost) }}</span></div>
+                    <div class="divider"></div>
+                    <div class="detail-row total"><span>Lợi nhuận:</span> <span class="val prof"
+                            :class="{ 'loss': stats.thisWeek.prof < 0 }">{{ formatCurrency(stats.thisWeek.prof)
+                            }}</span>
+                    </div>
+                </div>
             </div>
 
             <div class="stat-card">
-                <div class="stat-title">Doanh thu tháng này</div>
-                <div class="stat-value">{{ formatCurrency(revenue.thisMonth) }}</div>
-                <div class="stat-subtitle">{{ ordersCount.thisMonth }} đơn hàng</div>
+                <div class="stat-title">Tháng này ({{ stats.thisMonth.orders }} đơn)</div>
+                <div class="stat-details">
+                    <div class="detail-row"><span>Doanh thu:</span> <span class="val rev">{{
+                        formatCurrency(stats.thisMonth.rev) }}</span></div>
+                    <div class="detail-row"><span>Chi phí:</span> <span class="val cost">{{
+                        formatCurrency(stats.thisMonth.cost) }}</span></div>
+                    <div class="divider"></div>
+                    <div class="detail-row total"><span>Lợi nhuận:</span> <span class="val prof"
+                            :class="{ 'loss': stats.thisMonth.prof < 0 }">{{ formatCurrency(stats.thisMonth.prof)
+                            }}</span></div>
+                </div>
             </div>
 
             <div class="stat-card">
-                <div class="stat-title">Doanh thu năm nay</div>
-                <div class="stat-value">{{ formatCurrency(revenue.thisYear) }}</div>
-                <div class="stat-subtitle">{{ ordersCount.thisYear }} đơn hàng</div>
+                <div class="stat-title">Năm nay ({{ stats.thisYear.orders }} đơn)</div>
+                <div class="stat-details">
+                    <div class="detail-row"><span>Doanh thu:</span> <span class="val rev">{{
+                        formatCurrency(stats.thisYear.rev) }}</span></div>
+                    <div class="detail-row"><span>Chi phí:</span> <span class="val cost">{{
+                        formatCurrency(stats.thisYear.cost) }}</span></div>
+                    <div class="divider"></div>
+                    <div class="detail-row total"><span>Lợi nhuận:</span> <span class="val prof"
+                            :class="{ 'loss': stats.thisYear.prof < 0 }">{{ formatCurrency(stats.thisYear.prof)
+                            }}</span>
+                    </div>
+                </div>
             </div>
         </div>
+
         <div v-show="!loading" class="chart-container">
-            <h3>Doanh thu 7 ngày gần nhất</h3>
+            <h3>Biểu đồ Tài chính 7 ngày gần nhất</h3>
             <div class="canvas-wrapper">
                 <canvas ref="chartCanvas"></canvas>
             </div>
@@ -45,18 +82,25 @@ import Chart from "chart.js/auto";
 import { toast } from "vue3-toastify";
 
 const orders = ref([]);
+const importLogs = ref([]);
 const loading = ref(true);
 const chartCanvas = ref(null);
-let revenueChart = null;
+let financialChart = null;
 
-async function fetchOrders() {
+async function fetchData() {
     loading.value = true;
     try {
-        const res = await axios.get(`${import.meta.env.VITE_API_URL}/orders`);
-        orders.value = res.data.filter((order) => order.status === "completed");
+        // Gọi cả 2 API cùng lúc để tiết kiệm thời gian
+        const [ordersRes, logsRes] = await Promise.all([
+            axios.get(`${import.meta.env.VITE_API_URL}/orders`),
+            axios.get(`${import.meta.env.VITE_API_URL}/import-logs`)
+        ]);
+
+        orders.value = ordersRes.data.filter((order) => order.status === "completed");
+        importLogs.value = logsRes.data;
     } catch (err) {
-        console.error("Lỗi lấy đơn hàng:", err);
-        toast.error("Lỗi lấy đơn hàng");
+        console.error("Lỗi lấy dữ liệu:", err);
+        toast.error("Không thể tải dữ liệu thống kê!");
     } finally {
         loading.value = false;
         await nextTick();
@@ -66,42 +110,48 @@ async function fetchOrders() {
 
 const now = new Date();
 const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-
-const dayOfWeek = now.getDay(); // 0 (CN) - 6 (T7)
+const dayOfWeek = now.getDay();
 const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek + 1).getTime();
-
 const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 const startOfYear = new Date(now.getFullYear(), 0, 1).getTime();
 
-const revenue = computed(() => {
-    let today = 0, thisWeek = 0, thisMonth = 0, thisYear = 0;
+// Tính toán gộp Doanh thu, Chi phí, Lợi nhuận
+const stats = computed(() => {
+    let res = {
+        today: { rev: 0, cost: 0, prof: 0, orders: 0 },
+        thisWeek: { rev: 0, cost: 0, prof: 0, orders: 0 },
+        thisMonth: { rev: 0, cost: 0, prof: 0, orders: 0 },
+        thisYear: { rev: 0, cost: 0, prof: 0, orders: 0 }
+    };
 
+    // 1. Cộng Doanh thu
     orders.value.forEach(order => {
         const orderTime = new Date(order.created_at).getTime();
-
         const amount = Number(order.total) || 0;
-        if (orderTime >= startOfToday) today += amount;
-        if (orderTime >= startOfWeek) thisWeek += amount;
-        if (orderTime >= startOfMonth) thisMonth += amount;
-        if (orderTime >= startOfYear) thisYear += amount;
+
+        if (orderTime >= startOfToday) { res.today.rev += amount; res.today.orders++; }
+        if (orderTime >= startOfWeek) { res.thisWeek.rev += amount; res.thisWeek.orders++; }
+        if (orderTime >= startOfMonth) { res.thisMonth.rev += amount; res.thisMonth.orders++; }
+        if (orderTime >= startOfYear) { res.thisYear.rev += amount; res.thisYear.orders++; }
     });
 
-    return { today, thisWeek, thisMonth, thisYear };
-});
+    // 2. Cộng Chi phí nhập hàng
+    importLogs.value.forEach(log => {
+        const logTime = new Date(log.created_at).getTime();
+        const cost = Number(log.total_cost) || 0;
 
-const ordersCount = computed(() => {
-    let today = 0, thisWeek = 0, thisMonth = 0, thisYear = 0;
-
-    orders.value.forEach(order => {
-        const orderTime = new Date(order.created_at).getTime();
-
-        if (orderTime >= startOfToday) today++;
-        if (orderTime >= startOfWeek) thisWeek++;
-        if (orderTime >= startOfMonth) thisMonth++;
-        if (orderTime >= startOfYear) thisYear++;
+        if (logTime >= startOfToday) res.today.cost += cost;
+        if (logTime >= startOfWeek) res.thisWeek.cost += cost;
+        if (logTime >= startOfMonth) res.thisMonth.cost += cost;
+        if (logTime >= startOfYear) res.thisYear.cost += cost;
     });
 
-    return { today, thisWeek, thisMonth, thisYear };
+    // 3. Tính Lợi nhuận (Lợi nhuận = Doanh thu - Chi phí)
+    for (let key in res) {
+        res[key].prof = res[key].rev - res[key].cost;
+    }
+
+    return res;
 });
 
 function formatCurrency(amount) {
@@ -110,19 +160,18 @@ function formatCurrency(amount) {
 
 function renderChart() {
     if (!chartCanvas.value) return;
-
-    if (revenueChart) {
-        revenueChart.destroy();
-    }
+    if (financialChart) financialChart.destroy();
 
     const labels = [];
-    const data = [];
+    const revData = [];
+    const costData = [];
+    const profData = [];
     const today = new Date();
 
     for (let i = 6; i >= 0; i--) {
         const day = new Date(today);
         day.setDate(today.getDate() - i);
-        // Đặt về đầu ngày và cuối ngày
+
         const startOfDay = new Date(day);
         startOfDay.setHours(0, 0, 0, 0);
         const endOfDay = new Date(day);
@@ -130,38 +179,62 @@ function renderChart() {
 
         labels.push(`${day.getDate()}/${day.getMonth() + 1}`);
 
-        const dayTotal = orders.value.reduce((sum, order) => {
-            const orderTime = new Date(order.created_at).getTime();
-            if (orderTime >= startOfDay.getTime() && orderTime <= endOfDay.getTime()) {
-                return sum + (Number(order.total) || 0);
-            }
-            return sum;
+        // Tính doanh thu trong ngày
+        const dayRev = orders.value.reduce((sum, order) => {
+            const t = new Date(order.created_at).getTime();
+            return (t >= startOfDay.getTime() && t <= endOfDay.getTime()) ? sum + (Number(order.total) || 0) : sum;
         }, 0);
-        data.push(dayTotal);
+
+        // Tính chi phí trong ngày
+        const dayCost = importLogs.value.reduce((sum, log) => {
+            const t = new Date(log.created_at).getTime();
+            return (t >= startOfDay.getTime() && t <= endOfDay.getTime()) ? sum + (Number(log.total_cost) || 0) : sum;
+        }, 0);
+
+        revData.push(dayRev);
+        costData.push(dayCost);
+        profData.push(dayRev - dayCost); // Lợi nhuận = Doanh thu - Chi phí
     }
 
     const ctx = chartCanvas.value.getContext("2d");
-    revenueChart = new Chart(ctx, {
+    financialChart = new Chart(ctx, {
         type: "bar",
         data: {
             labels: labels,
-            datasets: [{
-                label: "Doanh thu (VND)",
-                data: data,
-                borderColor: "#0099ff",
-                backgroundColor: "rgba(0, 153, 255, 0.2)",
-                borderRadius: 5,
-            }]
+            datasets: [
+                {
+                    label: "Doanh thu",
+                    data: revData,
+                    backgroundColor: "#3b82f6", // Xanh dương
+                    borderRadius: 4,
+                },
+                {
+                    label: "Chi phí",
+                    data: costData,
+                    backgroundColor: "#ef4444", // Đỏ
+                    borderRadius: 4,
+                },
+                {
+                    label: "Lợi nhuận",
+                    data: profData,
+                    backgroundColor: "#10b981", // Xanh lá
+                    borderRadius: 4,
+                }
+            ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
             plugins: {
-                legend: { display: false },
+                legend: { position: 'top' },
                 tooltip: {
                     callbacks: {
                         label: function (context) {
-                            return context.raw.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
+                            return context.dataset.label + ': ' + context.raw.toLocaleString('vi-VN') + ' ₫';
                         }
                     }
                 }
@@ -171,7 +244,7 @@ function renderChart() {
                     beginAtZero: true,
                     ticks: {
                         callback: function (value) {
-                            return value.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
+                            return value.toLocaleString('vi-VN') + ' ₫';
                         }
                     }
                 }
@@ -181,79 +254,139 @@ function renderChart() {
 }
 
 onMounted(() => {
-    fetchOrders();
+    fetchData();
 });
 </script>
 
 <style scoped>
 .dashboard-container {
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 24px;
+}
+
+h2 {
+    color: #1e293b;
+    margin-bottom: 24px;
+    font-size: 28px;
 }
 
 .stats-grid {
     display: grid;
     gap: 20px;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    margin-top: 20px;
+    grid-template-columns: repeat(4, 1fr);
 }
 
 .stat-card {
     background-color: white;
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 20px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-    text-align: center;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    border: 1px solid #e2e8f0;
 }
 
 .stat-title {
-    font-size: 18px;
-    color: #555;
-    margin-bottom: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-.stat-value {
-    font-size: 24px;
+.stat-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    color: #64748b;
+}
+
+.val {
+    font-weight: 600;
+}
+
+.val.rev {
+    color: #3b82f6;
+}
+
+.val.cost {
+    color: #ef4444;
+}
+
+.divider {
+    height: 1px;
+    background-color: #e2e8f0;
+    margin: 4px 0;
+}
+
+.detail-row.total {
+    font-size: 16px;
     font-weight: bold;
-    color: #0099ff;
-    margin-bottom: 5px;
+    color: #0f172a;
 }
 
-.stat-subtitle {
-    color: #777;
+.val.prof {
+    color: #10b981;
 }
+
+.val.prof.loss {
+    color: #dc2626;
+}
+
+/* Hiện màu đỏ nếu lỗ */
 
 .loading {
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    height: 200px;
     font-size: 18px;
-    color: #555;
+    color: #64748b;
 }
 
 .chart-container {
-    margin-top: 40px;
+    margin-top: 30px;
     background-color: white;
-    padding: 20px;
-    border-radius: 8px;
-    margin-top: 20px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    border: 1px solid #e2e8f0;
 }
 
 .chart-container h3 {
     margin-top: 0;
     margin-bottom: 20px;
-    color: #555;
+    color: #1e293b;
+    font-size: 18px;
 }
 
 .canvas-wrapper {
     position: relative;
-    height: 350px;
+    height: 400px;
     width: 100%;
 }
 
-/* MOBILE */
+/* RESPONSIVE */
+@media (max-width: 1024px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
 @media (max-width: 600px) {
     .stats-grid {
         grid-template-columns: 1fr;
+    }
+
+    .canvas-wrapper {
+        height: 300px;
     }
 }
 </style>

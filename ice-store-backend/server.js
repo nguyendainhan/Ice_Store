@@ -103,20 +103,25 @@ app.get("/products", (req, res) => {
     });
 });
 
-// Thêm sản phẩm mới (Đã thêm biến category_id)
+// Thêm sản phẩm mới
 app.post("/products", upload.single("image"), (req, res) => {
-  const { name, price, category_id, stock } = req.body; 
-  const image = req.file ? req.file.path : "";
+  // ĐÓN NHẬN THÊM import_price TỪ FRONTEND
+  const { name, price, category_id, stock, import_price } = req.body; 
+  const image = req.file ? req.file.path : ""; 
   
   if (!image) {
     return res.status(400).json({ message: "Vui lòng chọn ảnh" });
   }
   
+  // CHÈN THÊM import_price VÀO CÂU LỆNH SQL
   db.query(
-    "INSERT INTO products (name, price, image, category_id, stock) VALUES (?,?,?,?,?)",
-    [name, price, image, category_id || null, stock || 0],
+    "INSERT INTO products (name, price, image, category_id, stock, import_price) VALUES (?,?,?,?,?,?)",
+    [name, price, image, category_id || null, stock || 0, import_price || 0],
     (err, result) => {
-      if (err) return res.status(500).json({ message: "Lỗi thêm sản phẩm" });
+      if (err) {
+        console.error("Lỗi thêm sản phẩm:", err);
+        return res.status(500).json({ message: "Lỗi thêm sản phẩm" });
+      }
       res.json({ message: "Thêm sản phẩm thành công", id: result.insertId, imageUrl: image });
     }
   );
@@ -125,13 +130,13 @@ app.post("/products", upload.single("image"), (req, res) => {
 // Sửa sản phẩm (Cập nhật cả danh mục)
 app.put("/products/:id", upload.single("image"), (req, res) => {
   const { id } = req.params;
-  const { name, price, category_id, stock } = req.body; 
+  const { name, price, category_id, stock, import_price } = req.body; 
   
   if (req.file) {
     const image = req.file.path; 
     db.query(
-      "UPDATE products SET name=?, price=?, image=?, category_id=?, stock=? WHERE id=?",
-      [name, price, image, category_id || null, stock || 0, id],
+      "UPDATE products SET name=?, price=?, image=?, category_id=?, stock=?, import_price=? WHERE id=?",
+      [name, price, image, category_id || null, stock || 0, import_price || 0, id],
       (err) => {
         if (err) {
           console.error("Lỗi sửa sản phẩm:", err);
@@ -143,8 +148,8 @@ app.put("/products/:id", upload.single("image"), (req, res) => {
   } else {
     // NẾU KHÔNG ĐỔI ẢNH
     db.query(
-      "UPDATE products SET name=?, price=?, category_id=?, stock=? WHERE id=?",
-      [name, price, category_id || null, stock || 0, id],
+      "UPDATE products SET name=?, price=?, category_id=?, stock=?, import_price=? WHERE id=?",
+      [name, price, category_id || null, stock || 0, import_price || 0, id],
       (err) => {
         if (err) {
           console.error("Lỗi sửa sản phẩm:", err);
@@ -512,7 +517,7 @@ app.delete("/cart/:id", (req, res) => {
     });
 });
 
-// --- 1. API Lấy thông tin User ---
+// --- API Lấy thông tin User ---
 app.get("/profile", (req, res) => {
     const { user_id } = req.headers;
     if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
@@ -524,7 +529,7 @@ app.get("/profile", (req, res) => {
     });
 });
 
-// --- 2. API Cập nhật thông tin User ---
+// --- API Cập nhật thông tin User ---
 app.put("/profile", (req, res) => {
     const { user_id } = req.headers;
     const { full_name, email, phone, address } = req.body;
@@ -538,7 +543,7 @@ app.put("/profile", (req, res) => {
     });
 });
 
-// --- 3. API Đổi mật khẩu ---
+// --- API Đổi mật khẩu ---
 app.put("/change-password", async (req, res) => {
     const { user_id } = req.headers;
     const { old_password, new_password } = req.body;
@@ -660,6 +665,42 @@ app.get("/orders", (req, res) => {
         console.log("Danh sách đơn hàng:", result);
         res.json(result);
     });
+});
+
+// === API Nhập hàng (Restock) ===
+app.post("/products/:id/restock", (req, res) => {
+    const productId = req.params.id;
+    const { quantity_added, import_price, note } = req.body;
+    
+    if (!quantity_added || quantity_added <= 0) {
+        return res.status(400).json({ message: "Số lượng nhập phải lớn hơn 0" });
+    }
+    
+    // Tính tổng tiền cho lô hàng này
+    const totalCost = quantity_added * (import_price || 0);
+    const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' });
+
+    // Lưu vào sổ nhật ký nhập hàng
+    db.query(
+        "INSERT INTO import_logs (product_id, quantity_added, import_price, total_cost, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        [productId, quantity_added, import_price || 0, totalCost, note || "", createdAt],
+        (err) => {
+            if (err) {
+                console.error("Lỗi ghi log nhập hàng:", err);
+                return res.status(500).json({ message: "Lỗi hệ thống khi ghi log" });
+            }
+
+            // CỘNG DỒN số lượng vào kho & Cập nhật giá vốn mới nhất
+            db.query(
+                "UPDATE products SET stock = stock + ?, import_price = ? WHERE id = ?",
+                [quantity_added, import_price || 0, productId],
+                (err) => {
+                    if (err) return res.status(500).json({ message: "Lỗi cập nhật kho" });
+                    res.json({ message: "Nhập hàng thành công! Kho đã được cộng dồn." });
+                }
+            );
+        }
+    );
 });
 
 // Lấy chi tiết đơn hàng (với danh sách sản phẩm)
@@ -931,6 +972,17 @@ function deleteStaffMember(res, id) {
         }
     });
 }
+
+// === API Lấy lịch sử nhập hàng (Để tính Chi phí & Lợi nhuận) ===
+app.get("/import-logs", (req, res) => {
+    db.query("SELECT * FROM import_logs", (err, result) => {
+        if (err) {
+            console.error("Lỗi lấy dữ liệu nhập hàng:", err);
+            return res.status(500).json({ message: "Lỗi hệ thống" });
+        }
+        res.json(result);
+    });
+});
 
 // === Chạy server ===
 const PORT = process.env.PORT || 3000; 

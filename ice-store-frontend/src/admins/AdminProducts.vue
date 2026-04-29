@@ -3,7 +3,7 @@
         <h2>Thêm sản phẩm mới</h2>
         <div class="form-group">
             <input v-model="newProduct.name" placeholder="Tên sản phẩm" class="form-input" />
-            <input v-model.number="newProduct.price" placeholder="Giá (VND)" type="number" class="form-input" />
+            <input v-model.number="newProduct.price" placeholder="Giá Bán (VND)" type="number" class="form-input" />
 
             <select v-model="newProduct.category_id" class="form-input category-select">
                 <option value="" disabled>-- Chọn danh mục --</option>
@@ -11,11 +11,15 @@
                     {{ cat.name }}
                 </option>
             </select>
-
-            <label>Số lượng kho:</label>
-            <input v-model.number="newProduct.stock" placeholder="Kho" type="number" class="form-input" min="0" />
             <input type="file" @change="handleImageUploadNew" accept="image/*" class="form-input file-input" />
-            <button @click="addProduct" class="btn green">Thêm sản phẩm</button>
+        </div>
+        <div class="form-group">
+            <label>Số lượng kho ban đầu:</label>
+            <input v-model.number="newProduct.stock" placeholder="Kho" type="number" class="form-input" min="0" />
+            <label>Giá vốn (Nhập/SX):</label>
+            <input v-model.number="newProduct.import_price" placeholder="Giá nhập" type="number" class="form-input"
+                min="0" />
+            <button @click="addProduct" class="btn green" style="margin-left: 10px;">Thêm sản phẩm</button>
         </div>
         <img v-if="newProduct.image" :src="newProduct.image" class="image-preview" />
     </div>
@@ -32,8 +36,10 @@
             </div>
 
             <div class="price-stock-row">
-                <p class="product-price">{{ Number(p.price).toLocaleString('vi-VN') }} VND</p>
-
+                <div>
+                    <p class="product-price">Bán: {{ Number(p.price).toLocaleString('vi-VN') }} ₫</p>
+                    <p class="product-import-price">Vốn: {{ Number(p.import_price || 0).toLocaleString('vi-VN') }} ₫</p>
+                </div>
                 <span :class="['stock-badge', getStockClass(p.stock)]">
                     Kho: {{ p.stock }}
                 </span>
@@ -42,6 +48,7 @@
             <img :src="p.image || 'https://via.placeholder.com/200?text=No+Image'" class="product-image" />
 
             <div class="actions">
+                <button @click="openRestockModal(p)" class="btn blue">Nhập</button>
                 <button @click="startEdit(p)" class="btn yellow">Sửa</button>
                 <button @click="deleteProduct(p.id)" class="btn red">Xóa</button>
             </div>
@@ -49,56 +56,85 @@
     </div>
 
     <div class="pagination">
-        <button :disabled="currentPage === 1" @click="currentPage--">
-            Prev
-        </button>
+        <button :disabled="currentPage === 1" @click="currentPage--">Prev</button>
         <span>Trang {{ currentPage }} / {{ totalPages }}</span>
-        <button :disabled="currentPage === totalPages" @click="currentPage++">
-            Next
-        </button>
+        <button :disabled="currentPage === totalPages" @click="currentPage++">Next</button>
+    </div>
+
+    <div v-if="restockProduct" class="modal-overlay" @click="restockProduct = null">
+        <div class="modal-content" @click.stop>
+            <h2>Nhập hàng: <span style="color: #3b82f6;">{{ restockProduct.name }}</span></h2>
+            <p style="margin-top: 0; color: #64748b; font-size: 14px;">Tồn kho hiện tại: <strong>{{ restockProduct.stock
+                    }}</strong></p>
+
+            <div class="form-row">
+                <div class="form-group half-width">
+                    <label>Số lượng nhập thêm:</label>
+                    <input v-model.number="restockForm.quantity" type="number" class="form-input" min="1" />
+                </div>
+                <div class="form-group half-width">
+                    <label>Giá vốn / 1 sản phẩm:</label>
+                    <input v-model.number="restockForm.import_price" type="number" class="form-input" min="0" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Ghi chú (Nguồn nhập, lô hàng...):</label>
+                <input v-model="restockForm.note" class="form-input" placeholder="VD: Nhập lô hàng từ NCC A..." />
+            </div>
+
+            <div style="margin-top: 15px; padding: 15px; background: #f8fafc; border-radius: 6px;">
+                <strong>Tổng chi phí lô hàng: </strong>
+                <span style="color: #dc2626; font-size: 18px; font-weight: bold;">
+                    {{ (restockForm.quantity * restockForm.import_price).toLocaleString('vi-VN') }} VND
+                </span>
+            </div>
+
+            <div class="modal-actions">
+                <button @click="submitRestock" class="btn blue">Xác nhận nhập kho</button>
+                <button @click="restockProduct = null" class="btn gray">Hủy</button>
+            </div>
+        </div>
     </div>
 
     <div v-if="editProduct" class="modal-overlay" @click="editProduct = null">
         <div class="modal-content" @click.stop>
             <h2>Sửa sản phẩm</h2>
-
             <div class="form-group">
                 <label>Tên sản phẩm:</label>
                 <input v-model="editProduct.name" class="form-input" />
             </div>
-
             <div class="form-row">
                 <div class="form-group half-width">
-                    <label>Giá (VND):</label>
+                    <label>Giá Bán (VND):</label>
                     <input v-model.number="editProduct.price" type="number" class="form-input" />
                 </div>
-
                 <div class="form-group half-width">
-                    <label>Số lượng kho:</label>
-                    <input v-model.number="editProduct.stock" type="number" class="form-input" min="0" />
+                    <label>Giá Vốn (VND):</label>
+                    <input v-model.number="editProduct.import_price" type="number" class="form-input" />
                 </div>
             </div>
-
-            <div class="form-group">
-                <label>Danh mục:</label>
-                <select v-model="editProduct.category_id" class="form-input category-select">
-                    <option value="" disabled>-- Chọn danh mục --</option>
-                    <option v-for="cat in categories" :key="cat.id" :value="cat.id">
-                        {{ cat.name }}
-                    </option>
-                </select>
+            <div class="form-row">
+                <div class="form-group half-width">
+                    <label>Sửa kho (Thủ công):</label>
+                    <input v-model.number="editProduct.stock" type="number" class="form-input" min="0" />
+                </div>
+                <div class="form-group half-width">
+                    <label>Danh mục:</label>
+                    <select v-model="editProduct.category_id" class="form-input category-select">
+                        <option value="" disabled>-- Chọn danh mục --</option>
+                        <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+                    </select>
+                </div>
             </div>
-
             <div class="form-group">
                 <label>Ảnh sản phẩm (Để trống nếu không đổi):</label>
                 <input type="file" @change="handleImageUploadEdit" accept="image/*" class="form-input file-input" />
             </div>
-
             <div class="preview-container">
                 <img :src="editProduct.image || 'https://via.placeholder.com/200?text=No+Image'"
                     class="image-preview-modal" />
             </div>
-
             <div class="modal-actions">
                 <button @click="saveEdit" class="btn green">Lưu thay đổi</button>
                 <button @click="editProduct = null" class="btn gray">Hủy</button>
@@ -114,15 +150,18 @@ import { toast } from "vue3-toastify";
 
 const products = ref([]);
 const categories = ref([]);
-const newProduct = ref({ name: "", price: 0, imageFile: null, category_id: "", stock: 0 });
+// Cập nhật state thêm import_price
+const newProduct = ref({ name: "", price: 0, imageFile: null, category_id: "", stock: 0, import_price: 0 });
 const editProduct = ref(null);
 
+// === STATE CHO NHẬP HÀNG ===
+const restockProduct = ref(null);
+const restockForm = ref({ quantity: 1, import_price: 0, note: "" });
 
 const searchKeyword = ref("");
 const currentPage = ref(1);
 const itemsPerPage = 6;
 
-// Lấy danh sách sản phẩm
 async function fetchProducts() {
     try {
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/products`);
@@ -132,7 +171,6 @@ async function fetchProducts() {
     }
 }
 
-// Lấy danh sách danh mục
 async function fetchCategories() {
     try {
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/categories`);
@@ -143,57 +181,45 @@ async function fetchCategories() {
 }
 
 function getStockClass(stock) {
-    if (stock <= 0) return 'stock-empty';      // Hết hàng (Đỏ)
-    if (stock <= 10) return 'stock-low';       // Sắp hết (Cam)
-    return 'stock-okay';                       // Còn nhiều (Xanh lá)
+    if (stock <= 0) return 'stock-empty';
+    if (stock <= 10) return 'stock-low';
+    return 'stock-okay';
 }
 
-// Hàm trợ giúp để hiển thị Tên danh mục dựa vào ID
 function getCategoryName(id) {
     if (!id) return "Chưa phân loại";
     const cat = categories.value.find(c => c.id === id);
     return cat ? cat.name : "Chưa phân loại";
 }
 
-// Xử lý upload ảnh cho sản phẩm mới
 function handleImageUploadNew(event) {
     const file = event.target.files[0];
-    if (file) {
-        newProduct.value.imageFile = file;
-    }
+    if (file) newProduct.value.imageFile = file;
 }
 
-// Xử lý upload ảnh cho sản phẩm sửa
 function handleImageUploadEdit(event) {
     const file = event.target.files[0];
-    if (file) {
-        editProduct.value.imageFile = file;
-    }
+    if (file) editProduct.value.imageFile = file;
 }
 
-// Lọc theo tìm kiếm
 const filteredProducts = computed(() => {
-    return products.value.filter(p =>
-        p.name.toLowerCase().includes(searchKeyword.value.toLowerCase())
-    );
+    return products.value.filter(p => p.name.toLowerCase().includes(searchKeyword.value.toLowerCase()));
 });
 
-// Tổng số trang
 const totalPages = computed(() => {
     const total = Math.ceil(filteredProducts.value.length / itemsPerPage);
-    return total > 0 ? total : 1; // Luôn hiển thị ít nhất trang 1
+    return total > 0 ? total : 1;
 });
 
-// Sản phẩm theo trang
 const paginatedProducts = computed(() => {
     const start = (currentPage.value - 1) * itemsPerPage;
     return filteredProducts.value.slice(start, start + itemsPerPage);
 });
 
-// Thêm sản phẩm mới
+// Thêm sản phẩm
 async function addProduct() {
     if (!newProduct.value.name || !newProduct.value.price || !newProduct.value.imageFile || !newProduct.value.category_id) {
-        toast.error("Vui lòng điền tên, giá, chọn ảnh và danh mục!");
+        toast.warning("Vui lòng điền đủ Tên, Giá, Ảnh và Danh mục!");
         return;
     }
     try {
@@ -203,16 +229,15 @@ async function addProduct() {
         formData.append("image", newProduct.value.imageFile);
         formData.append("category_id", newProduct.value.category_id);
         formData.append("stock", newProduct.value.stock);
+        // Gửi thêm giá nhập
+        formData.append("import_price", newProduct.value.import_price || 0);
 
-        await axios.post(`${import.meta.env.VITE_API_URL}/products`, formData, {
-            headers: { "Content-Type": "multipart/form-data" }
-        });
-        toast.success("Thêm sản phẩm thành công");
-        newProduct.value = { name: "", price: 0, imageFile: null, category_id: "" };
+        await axios.post(`${import.meta.env.VITE_API_URL}/products`, formData, { headers: { "Content-Type": "multipart/form-data" } });
+        toast.success("Thêm sản phẩm thành công!");
+        newProduct.value = { name: "", price: 0, imageFile: null, category_id: "", stock: 0, import_price: 0 };
         fetchProducts();
     } catch (err) {
-        console.error("Lỗi thêm sản phẩm:", err);
-        toast.error(err.response?.data?.message || "Lỗi thêm sản phẩm");
+        toast.error("Lỗi thêm sản phẩm");
     }
 }
 
@@ -223,7 +248,7 @@ function startEdit(p) {
 // Lưu sửa sản phẩm
 async function saveEdit() {
     if (!editProduct.value.name || !editProduct.value.price || !editProduct.value.category_id) {
-        toast.error("Vui lòng điền đủ tên, giá và danh mục");
+        toast.warning("Vui lòng điền đủ tên, giá và danh mục");
         return;
     }
     try {
@@ -232,32 +257,60 @@ async function saveEdit() {
         formData.append("price", editProduct.value.price);
         formData.append("category_id", editProduct.value.category_id);
         formData.append("stock", editProduct.value.stock);
+        formData.append("import_price", editProduct.value.import_price || 0);
 
-        if (editProduct.value.imageFile) {
-            formData.append("image", editProduct.value.imageFile);
-        }
+        if (editProduct.value.imageFile) formData.append("image", editProduct.value.imageFile);
 
-        await axios.put(`${import.meta.env.VITE_API_URL}/products/${editProduct.value.id}`, formData, {
-            headers: { "Content-Type": "multipart/form-data" }
-        });
+        await axios.put(`${import.meta.env.VITE_API_URL}/products/${editProduct.value.id}`, formData, { headers: { "Content-Type": "multipart/form-data" } });
         toast.success("Cập nhật sản phẩm thành công");
         editProduct.value = null;
         fetchProducts();
     } catch (err) {
-        console.error("Lỗi cập nhật sản phẩm:", err);
-        toast.error(err.response?.data?.message || "Lỗi cập nhật sản phẩm");
+        toast.error("Lỗi cập nhật sản phẩm");
     }
 }
 
 async function deleteProduct(id) {
     if (confirm("Bạn có chắc muốn xóa sản phẩm này?")) {
         await axios.delete(`${import.meta.env.VITE_API_URL}/products/${id}`);
+        toast.success("Đã xóa sản phẩm");
         fetchProducts();
     }
 }
 
+// === CÁC HÀM XỬ LÝ NHẬP HÀNG ===
+function openRestockModal(product) {
+    restockProduct.value = product;
+    // Điền sẵn giá nhập cũ để Admin đỡ phải gõ lại
+    restockForm.value = {
+        quantity: 10,
+        import_price: product.import_price || 0,
+        note: ""
+    };
+}
+
+async function submitRestock() {
+    if (restockForm.value.quantity <= 0) {
+        toast.warning("Số lượng nhập phải lớn hơn 0");
+        return;
+    }
+    try {
+        await axios.post(`${import.meta.env.VITE_API_URL}/products/${restockProduct.value.id}/restock`, {
+            quantity_added: restockForm.value.quantity,
+            import_price: restockForm.value.import_price,
+            note: restockForm.value.note
+        });
+        toast.success(`Đã nhập thêm ${restockForm.value.quantity} sản phẩm vào kho!`);
+        restockProduct.value = null;
+        fetchProducts(); // Tải lại danh sách để thấy số lượng kho tăng lên
+    } catch (err) {
+        toast.error("Lỗi nhập hàng!");
+        console.error(err);
+    }
+}
+
 onMounted(() => {
-    fetchCategories(); // Nhớ gọi hàm lấy danh mục khi trang vừa tải xong
+    fetchCategories();
     fetchProducts();
 });
 </script>
@@ -486,6 +539,22 @@ onMounted(() => {
 
 .btn.gray {
     background: #64748b;
+}
+
+/* Bổ sung nút màu xanh cho chức năng Nhập hàng */
+.btn.blue {
+    background: #3b82f6;
+}
+
+.btn.blue:hover {
+    background: #2563eb;
+}
+
+.product-import-price {
+    margin: 5px 0 0 0;
+    font-size: 13px;
+    color: #64748b;
+    font-weight: 500;
 }
 
 /* PAGINATION */
