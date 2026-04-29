@@ -789,6 +789,10 @@ app.put("/orders/:order_id/confirm", (req, res) => {
             console.error("Lỗi cập nhật đơn hàng:", err);
             return res.status(500).json({ message: "Lỗi cập nhật đơn hàng", error: err.message });
         }
+        
+        // BẮN TÍN HIỆU TOÀN HỆ THỐNG: CÓ ĐƠN VỪA ĐƯỢC CẬP NHẬT TRẠNG THÁI
+        io.emit("order_status_updated");
+
         res.json({ message: "Đơn hàng chuyển sang chờ xác nhận" });
     });
 });
@@ -802,6 +806,10 @@ app.put("/orders/:order_id/confirm-received", (req, res) => {
             console.error("Lỗi cập nhật đơn hàng:", err);
             return res.status(500).json({ message: "Lỗi cập nhật đơn hàng", error: err.message });
         }
+        
+        // BẮN TÍN HIỆU TOÀN HỆ THỐNG (Tùy chọn, để các biểu đồ hoặc danh sách cập nhật)
+        io.emit("order_status_updated");
+
         res.json({ message: "Cảm ơn bạn đã xác nhận nhận hàng" });
     });
 });

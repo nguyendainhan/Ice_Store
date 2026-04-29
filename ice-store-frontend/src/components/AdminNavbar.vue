@@ -53,8 +53,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import axios from "axios"; // 👉 Nhớ import axios
+import axios from "axios";
 import { username as userNameState, role as roleState } from "../stores/user.js";
+import { io } from "socket.io-client";
 
 const router = useRouter();
 const route = useRoute();
@@ -62,7 +63,6 @@ const username = ref("");
 const isSupervisor = ref(false);
 const userRole = ref(localStorage.getItem("role") || "");
 
-// CÁC BIẾN CHO TÍNH NĂNG CẢNH BÁO
 const overdueCount = ref(0);
 let pollingInterval = null;
 
@@ -71,14 +71,20 @@ onMounted(() => {
     isSupervisor.value = localStorage.getItem("is_supervisor") === "1";
     userRole.value = localStorage.getItem("role") || "";
 
-    // Kiểm tra đơn trễ ngay khi load trang
     checkOverdueOrders();
-
-    // Cài đặt lặp lại tự động kiểm tra mỗi 1 phút (60000ms)
     pollingInterval = setInterval(checkOverdueOrders, 60000);
+
+    if (userRole.value === 'admin' || userRole.value === 'staff') {
+        const socket = io(import.meta.env.VITE_API_URL);
+
+        // Khi nghe thấy Backend hô lên "order_status_updated", lập tức đi đếm lại chuông!
+        socket.on("order_status_updated", () => {
+            console.log("🔄 Đã bắt được tín hiệu trạng thái đơn hàng thay đổi, đang tính lại chuông...");
+            checkOverdueOrders();
+        });
+    }
 });
 
-// Dọn dẹp bộ đếm giờ khi chuyển khỏi hệ thống để không nặng máy
 onUnmounted(() => {
     if (pollingInterval) clearInterval(pollingInterval);
 });
@@ -93,7 +99,6 @@ async function checkOverdueOrders() {
 }
 
 function goToOrders() {
-    // Chuyển hướng đến trang quản lý đơn hàng
     router.push('/admin/orders');
 }
 
@@ -102,18 +107,15 @@ function isActive(path) {
 }
 
 function logout() {
-    // Xóa localStorage
     localStorage.removeItem("token");
     localStorage.removeItem("username");
     localStorage.removeItem("role");
     localStorage.removeItem("user_id");
     localStorage.removeItem("is_supervisor");
 
-    // Reset state reactive từ store
     userNameState.value = "";
     roleState.value = "";
 
-    // Chuyển về trang login
     router.push("/login");
 }
 </script>

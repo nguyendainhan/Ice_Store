@@ -8,7 +8,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue"; // Kiểm tra kỹ dòng này phải có onMounted
+import { computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import Navbar from "./components/Navbar.vue";
 import CustomerNavbar from "./components/CustomerNavbar.vue";
