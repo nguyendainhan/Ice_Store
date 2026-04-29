@@ -7,6 +7,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const nodemailer = require("nodemailer");
 const serverUrl = process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
 
 const app = express();
@@ -17,6 +18,15 @@ app.use(express.urlencoded({ limit: '50mb' }));
 // Cấu hình upload ảnh
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
+// Khởi tạo dịch vụ Bưu điện (Transporter)
+const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
 
 // Cấu hình thông tin Cloudinary
 cloudinary.config({
@@ -72,11 +82,7 @@ app.post("/categories", (req, res) => {
 });
 
 
-// ==========================================
 // === API SẢN PHẨM (ĐÃ SỬA ĐỂ LỌC DANH MỤC) ===
-// ==========================================
-
-// Lấy tất cả sản phẩm đang bán (CÓ LỌC THEO CATEGORY_ID)
 app.get("/products", (req, res) => {
     const category_id = req.query.category_id;
     
@@ -99,22 +105,18 @@ app.get("/products", (req, res) => {
 
 // Thêm sản phẩm mới (Đã thêm biến category_id)
 app.post("/products", upload.single("image"), (req, res) => {
-  const { name, price, category_id } = req.body; // <--- Thêm category_id ở đây
-  const image = req.file ? req.file.path : ""; 
+  const { name, price, category_id, stock } = req.body; 
+  const image = req.file ? req.file.path : "";
   
   if (!image) {
     return res.status(400).json({ message: "Vui lòng chọn ảnh" });
   }
   
-  // Đưa thêm cột category_id vào lệnh INSERT
   db.query(
-    "INSERT INTO products (name, price, image, category_id) VALUES (?,?,?,?)",
-    [name, price, image, category_id || null], // Cho phép null nếu lỡ quên truyền
+    "INSERT INTO products (name, price, image, category_id, stock) VALUES (?,?,?,?,?)",
+    [name, price, image, category_id || null, stock || 0],
     (err, result) => {
-      if (err) {
-        console.error("Lỗi thêm sản phẩm:", err);
-        return res.status(500).json({ message: "Lỗi thêm sản phẩm" });
-      }
+      if (err) return res.status(500).json({ message: "Lỗi thêm sản phẩm" });
       res.json({ message: "Thêm sản phẩm thành công", id: result.insertId, imageUrl: image });
     }
   );
@@ -123,15 +125,13 @@ app.post("/products", upload.single("image"), (req, res) => {
 // Sửa sản phẩm (Cập nhật cả danh mục)
 app.put("/products/:id", upload.single("image"), (req, res) => {
   const { id } = req.params;
-  const { name, price, category_id } = req.body; 
+  const { name, price, category_id, stock } = req.body; 
   
-  // NẾU CÓ UPLOAD ẢNH MỚI LÊN CLOUDINARY
   if (req.file) {
     const image = req.file.path; 
-    
     db.query(
-      "UPDATE products SET name=?, price=?, image=?, category_id=? WHERE id=?",
-      [name, price, image, category_id || null, id],
+      "UPDATE products SET name=?, price=?, image=?, category_id=?, stock=? WHERE id=?",
+      [name, price, image, category_id || null, stock || 0, id],
       (err) => {
         if (err) {
           console.error("Lỗi sửa sản phẩm:", err);
@@ -143,8 +143,8 @@ app.put("/products/:id", upload.single("image"), (req, res) => {
   } else {
     // NẾU KHÔNG ĐỔI ẢNH
     db.query(
-      "UPDATE products SET name=?, price=?, category_id=? WHERE id=?",
-      [name, price, category_id || null, id],
+      "UPDATE products SET name=?, price=?, category_id=?, stock=? WHERE id=?",
+      [name, price, category_id || null, stock || 0, id],
       (err) => {
         if (err) {
           console.error("Lỗi sửa sản phẩm:", err);
@@ -340,7 +340,7 @@ app.put("/profile/avatar", upload.single("avatar"), (req, res) => {
     });
 });
 
-// === Tạo đơn hàng ===
+// === Tạo đơn hàng & Gửi Email ===
 app.post("/orders", (req, res) => {
   const { user_id, items, total, delivery_address, phone_number } = req.body;
   
@@ -360,8 +360,65 @@ app.post("/orders", (req, res) => {
           "INSERT INTO order_items (order_id, product_id, quantity) VALUES (?,?,?)",
           [orderId, item.product_id, item.quantity]
         );
+        
+        db.query(
+          "UPDATE products SET stock = stock - ? WHERE id = ?",
+          [item.quantity, item.product_id]
+        );
       });
 
+      // BẮT ĐẦU QUÁ TRÌNH GỬI EMAIL TỰ ĐỘNG
+      // Lấy email và tên của khách hàng từ bảng users
+      db.query("SELECT email, full_name, username FROM users WHERE id = ?", [user_id], (err, users) => {
+          // Chỉ gửi nếu lấy được thông tin và khách có nhập email
+          if (!err && users.length > 0 && users[0].email) {
+              const userEmail = users[0].email;
+              // Nếu khách chưa cập nhật họ tên, dùng tạm username
+              const customerName = users[0].full_name || users[0].username; 
+
+              // Soạn thư HTML
+              const mailOptions = {
+                  from: `"Cửa hàng IceStore" <${process.env.EMAIL_USER}>`,
+                  to: userEmail,
+                  subject: `🎉 Xác nhận đơn hàng #${orderId} - IceStore`,
+                  html: `
+                      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                          <div style="background-color: #1e293b; padding: 20px; text-align: center;">
+                              <h1 style="margin: 0; color: #38bdf8; font-size: 28px; letter-spacing: 1px;">IceStore</h1>
+                          </div>
+                          <div style="padding: 30px; background-color: #ffffff;">
+                              <h2 style="color: #0f172a; margin-top: 0;">Xin chào ${customerName}!</h2>
+                              <p style="color: #475569; font-size: 16px; line-height: 1.6;">Cảm ơn bạn đã tin tưởng và đặt hàng tại IceStore. Đơn hàng của bạn đã được hệ thống ghi nhận thành công và đang trong quá trình xử lý.</p>
+                              
+                              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin: 25px 0;">
+                                  <h3 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Thông tin đơn hàng #${orderId}</h3>
+                                  <p style="margin: 10px 0; color: #334155;"><strong>📍 Giao đến:</strong> ${delivery_address}</p>
+                                  <p style="margin: 10px 0; color: #334155;"><strong>📞 Số điện thoại:</strong> ${phone_number}</p>
+                                  <p style="margin: 10px 0; color: #334155;"><strong>🕒 Thời gian đặt:</strong> ${createdAt}</p>
+                                  <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1;">
+                                      <p style="margin: 0; font-size: 18px; color: #1e293b;"><strong>Tổng thanh toán:</strong> <span style="color: #dc2626; font-size: 22px; font-weight: bold; float: right;">${Number(total).toLocaleString('vi-VN')} VND</span></p>
+                                  </div>
+                              </div>
+                              
+                              <p style="color: #475569; font-size: 15px;">Chúng tôi sẽ liên hệ với bạn trong thời gian sớm nhất để xác nhận thời gian giao đá lạnh.</p>
+                              <p style="color: #475569; font-size: 15px; margin-bottom: 0;">Trân trọng,<br><strong style="color: #1e293b;">Đội ngũ IceStore</strong></p>
+                          </div>
+                      </div>
+                  `
+              };
+
+              // Phát lệnh gửi thư ngầm (không làm chậm tốc độ load web của khách)
+              transporter.sendMail(mailOptions, (error, info) => {
+                  if (error) {
+                      console.error("Lỗi gửi email Nodemailer:", error);
+                  } else {
+                      console.log("Đã gửi email hóa đơn thành công đến:", userEmail);
+                  }
+              });
+          }
+      });
+
+      // Phản hồi cho Frontend biết là đặt hàng xong rồi (Dù email gửi lâu thì web vẫn chạy nhanh)
       res.json({ message: "Order created", orderId });
     }
   );

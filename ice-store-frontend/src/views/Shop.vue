@@ -22,13 +22,19 @@
                     class="product-image" />
                 <h2 class="product-name">{{ p.name }}</h2>
                 <p class="product-price">{{ Number(p.price).toLocaleString('vi-VN') }} VND</p>
+                <p class="product-stock" :style="{ color: p.stock > 0 ? '#10b981' : '#dc2626', fontWeight: 'bold' }">
+                    {{ p.stock > 0 ? `Còn hàng: ${p.stock}` : 'Đã hết hàng' }}
+                </p>
+
                 <div class="quantity-section">
                     <label for="qty">Số lượng:</label>
-                    <input type="number" :id="`qty-${p.id}`" v-model.number="quantities[p.id]" min="1"
-                        class="quantity-input" />
+                    <input type="number" :id="`qty-${p.id}`" v-model.number="quantities[p.id]" min="1" :max="p.stock"
+                        :disabled="p.stock === 0" class="quantity-input" />
                 </div>
-                <button @click="addToCart(p)" class="btn-add-cart">
-                    Thêm vào giỏ
+
+                <button @click="addToCart(p)" class="btn-add-cart" :disabled="p.stock === 0"
+                    :style="{ backgroundColor: p.stock === 0 ? '#94a3b8' : '' }">
+                    {{ p.stock === 0 ? 'Hết hàng' : 'Thêm vào giỏ' }}
                 </button>
             </div>
         </div>
@@ -94,6 +100,14 @@ async function addToCart(product) {
     }
 
     const qty = quantities.value[product.id] || 1;
+
+    // THÊM CHẶN SỐ LƯỢNG KHO TẠI ĐÂY
+    if (qty > product.stock) {
+        alert(`Rất tiếc! Trong kho chỉ còn ${product.stock} sản phẩm.`);
+        quantities.value[product.id] = product.stock; // Tự động giảm số lượng về mức tối đa
+        return;
+    }
+
     if (qty < 1) {
         alert("Số lượng phải lớn hơn 0");
         return;

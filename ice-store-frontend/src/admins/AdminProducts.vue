@@ -12,6 +12,8 @@
                 </option>
             </select>
 
+            <label>Số lượng kho:</label>
+            <input v-model.number="newProduct.stock" placeholder="Kho" type="number" class="form-input" min="0" />
             <input type="file" @change="handleImageUploadNew" accept="image/*" class="form-input file-input" />
             <button @click="addProduct" class="btn green">Thêm sản phẩm</button>
         </div>
@@ -29,7 +31,13 @@
                 <span class="category-badge">{{ getCategoryName(p.category_id) }}</span>
             </div>
 
-            <p class="product-price">{{ Number(p.price).toLocaleString('vi-VN') }} VND</p>
+            <div class="price-stock-row">
+                <p class="product-price">{{ Number(p.price).toLocaleString('vi-VN') }} VND</p>
+
+                <span :class="['stock-badge', getStockClass(p.stock)]">
+                    Kho: {{ p.stock }}
+                </span>
+            </div>
 
             <img :src="p.image || 'https://via.placeholder.com/200?text=No+Image'" class="product-image" />
 
@@ -53,13 +61,22 @@
     <div v-if="editProduct" class="modal-overlay" @click="editProduct = null">
         <div class="modal-content" @click.stop>
             <h2>Sửa sản phẩm</h2>
+
             <div class="form-group">
-                <label>Tên:</label>
+                <label>Tên sản phẩm:</label>
                 <input v-model="editProduct.name" class="form-input" />
             </div>
-            <div class="form-group">
-                <label>Giá (VND):</label>
-                <input v-model.number="editProduct.price" type="number" class="form-input" />
+
+            <div class="form-row">
+                <div class="form-group half-width">
+                    <label>Giá (VND):</label>
+                    <input v-model.number="editProduct.price" type="number" class="form-input" />
+                </div>
+
+                <div class="form-group half-width">
+                    <label>Số lượng kho:</label>
+                    <input v-model.number="editProduct.stock" type="number" class="form-input" min="0" />
+                </div>
             </div>
 
             <div class="form-group">
@@ -74,13 +91,16 @@
 
             <div class="form-group">
                 <label>Ảnh sản phẩm (Để trống nếu không đổi):</label>
-                <input type="file" @change="handleImageUploadEdit" accept="image/*" class="form-input" />
+                <input type="file" @change="handleImageUploadEdit" accept="image/*" class="form-input file-input" />
             </div>
-            <img :src="editProduct.image || 'https://via.placeholder.com/200?text=No+Image'"
-                class="image-preview-modal" />
+
+            <div class="preview-container">
+                <img :src="editProduct.image || 'https://via.placeholder.com/200?text=No+Image'"
+                    class="image-preview-modal" />
+            </div>
 
             <div class="modal-actions">
-                <button @click="saveEdit" class="btn green">Lưu</button>
+                <button @click="saveEdit" class="btn green">Lưu thay đổi</button>
                 <button @click="editProduct = null" class="btn gray">Hủy</button>
             </div>
         </div>
@@ -92,9 +112,10 @@ import { ref, onMounted, computed } from "vue";
 import axios from "axios";
 
 const products = ref([]);
-const categories = ref([]); // Biến lưu danh sách danh mục
-const newProduct = ref({ name: "", price: 0, imageFile: null, category_id: "" }); // Thêm category_id
+const categories = ref([]);
+const newProduct = ref({ name: "", price: 0, imageFile: null, category_id: "", stock: 0 });
 const editProduct = ref(null);
+
 
 const searchKeyword = ref("");
 const currentPage = ref(1);
@@ -118,6 +139,12 @@ async function fetchCategories() {
     } catch (err) {
         console.error("Lỗi lấy danh mục:", err);
     }
+}
+
+function getStockClass(stock) {
+    if (stock <= 0) return 'stock-empty';      // Hết hàng (Đỏ)
+    if (stock <= 10) return 'stock-low';       // Sắp hết (Cam)
+    return 'stock-okay';                       // Còn nhiều (Xanh lá)
 }
 
 // Hàm trợ giúp để hiển thị Tên danh mục dựa vào ID
@@ -173,7 +200,8 @@ async function addProduct() {
         formData.append("name", newProduct.value.name);
         formData.append("price", newProduct.value.price);
         formData.append("image", newProduct.value.imageFile);
-        formData.append("category_id", newProduct.value.category_id); // Gửi ID danh mục lên
+        formData.append("category_id", newProduct.value.category_id);
+        formData.append("stock", newProduct.value.stock);
 
         await axios.post(`${import.meta.env.VITE_API_URL}/products`, formData, {
             headers: { "Content-Type": "multipart/form-data" }
@@ -201,7 +229,8 @@ async function saveEdit() {
         const formData = new FormData();
         formData.append("name", editProduct.value.name);
         formData.append("price", editProduct.value.price);
-        formData.append("category_id", editProduct.value.category_id); // Gửi ID danh mục đã sửa lên
+        formData.append("category_id", editProduct.value.category_id);
+        formData.append("stock", editProduct.value.stock);
 
         if (editProduct.value.imageFile) {
             formData.append("image", editProduct.value.imageFile);
@@ -385,6 +414,48 @@ onMounted(() => {
     margin-top: auto;
 }
 
+.price-stock-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.stock-badge {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+/* Màu cho các trạng thái kho */
+.stock-okay {
+    background-color: #dcfce7;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+}
+
+.stock-low {
+    background-color: #ffedd5;
+    color: #9a3412;
+    border: 1px solid #fed7aa;
+}
+
+.stock-empty {
+    background-color: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+/* Điều chỉnh lại card header để tên không đè lên badge */
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 5px;
+    gap: 10px;
+}
+
 .btn {
     padding: 8px 16px;
     border: none;
@@ -475,6 +546,36 @@ onMounted(() => {
     gap: 10px;
     margin-top: 25px;
     justify-content: flex-end;
+}
+
+.form-row {
+    display: flex;
+    gap: 15px;
+    width: 100%;
+}
+
+.half-width {
+    flex: 1;
+}
+
+.preview-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+}
+
+.image-preview-modal {
+    max-width: 150px;
+    max-height: 150px;
+    border-radius: 6px;
+    object-fit: cover;
+    display: block;
+    margin: 0;
+    /* Xóa margin-top cũ */
 }
 
 /* IMAGE PREVIEW */
