@@ -269,15 +269,19 @@ async function confirmReceived(orderId) {
 
 // Bật lắng nghe khi mở trang
 onMounted(() => {
-    fetchUserOrders(); // Load dữ liệu lần đầu
+    fetchUserOrders();
 
     socket = io(import.meta.env.VITE_API_URL);
 
-    socket.on("order_status_updated", () => {
-        console.log("🔄 Đơn hàng vừa được cập nhật, đang tải lại...");
-        fetchUserOrders(); // Cập nhật lại danh sách bên ngoài
+    // Bổ sung chữ 'data' vào trong ngoặc
+    socket.on("order_status_updated", (data) => {
+        if (data && data.target_user_id && data.target_user_id != userId) {
+            return;
+        }
 
-        // Nếu khách đang mở cửa sổ "Xem chi tiết", tự động tải lại chi tiết đơn đó luôn!
+        console.log("🔄 Đơn hàng của MÌNH vừa được cập nhật, đang tải lại...");
+        fetchUserOrders();
+
         if (selectedOrder.value) {
             viewOrderDetails(selectedOrder.value.order.id);
         }

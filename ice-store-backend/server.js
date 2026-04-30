@@ -832,37 +832,45 @@ app.get("/orders/:order_id", (req, res) => {
     });
 });
 
-// Xác nhận đơn hàng đã giao (cập nhật status)
+// Xác nhận đơn hàng đã giao
 app.put("/orders/:order_id/confirm", verifyToken, (req, res) => {
     const { order_id } = req.params;
     
-    db.query("UPDATE orders SET status = 'awaiting_confirmation' WHERE id = ?", [order_id], (err, result) => {
-        if (err) {
-            console.error("Lỗi cập nhật đơn hàng:", err);
-            return res.status(500).json({ message: "Lỗi cập nhật đơn hàng", error: err.message });
-        }
+    // 1. Tìm xem đơn này của khách hàng nào
+    db.query("SELECT user_id FROM orders WHERE id = ?", [order_id], (err, results) => {
+        if (err || results.length === 0) return res.status(500).json({ message: "Không tìm thấy đơn" });
         
-        // BẮN TÍN HIỆU TOÀN HỆ THỐNG: CÓ ĐƠN VỪA ĐƯỢC CẬP NHẬT TRẠNG THÁI
-        io.emit("order_status_updated");
+        const targetUserId = results[0].user_id;
 
-        res.json({ message: "Đơn hàng chuyển sang chờ xác nhận" });
+        // 2. Cập nhật trạng thái
+        db.query("UPDATE orders SET status = 'awaiting_confirmation' WHERE id = ?", [order_id], (updateErr) => {
+            if (updateErr) return res.status(500).json({ message: "Lỗi cập nhật" });
+            
+            // 3. PHÁT LOA KÈM THEO ID KHÁCH HÀNG
+            io.emit("order_status_updated", { target_user_id: targetUserId });
+
+            res.json({ message: "Đơn hàng chuyển sang chờ xác nhận" });
+        });
     });
 });
 
-// Khách hàng xác nhận đã nhận hàng (chuyển sang completed)
+// Khách hàng xác nhận đã nhận hàng
 app.put("/orders/:order_id/confirm-received", verifyToken, (req, res) => {
     const { order_id } = req.params;
     
-    db.query("UPDATE orders SET status = 'completed' WHERE id = ?", [order_id], (err, result) => {
-        if (err) {
-            console.error("Lỗi cập nhật đơn hàng:", err);
-            return res.status(500).json({ message: "Lỗi cập nhật đơn hàng", error: err.message });
-        }
+    db.query("SELECT user_id FROM orders WHERE id = ?", [order_id], (err, results) => {
+        if (err || results.length === 0) return res.status(500).json({ message: "Không tìm thấy đơn" });
         
-        // BẮN TÍN HIỆU TOÀN HỆ THỐNG (Tùy chọn, để các biểu đồ hoặc danh sách cập nhật)
-        io.emit("order_status_updated");
+        const targetUserId = results[0].user_id;
 
-        res.json({ message: "Cảm ơn bạn đã xác nhận nhận hàng" });
+        db.query("UPDATE orders SET status = 'completed' WHERE id = ?", [order_id], (updateErr) => {
+            if (updateErr) return res.status(500).json({ message: "Lỗi cập nhật" });
+            
+            // Bắn tín hiệu kèm ID
+            io.emit("order_status_updated", { target_user_id: targetUserId });
+
+            res.json({ message: "Cảm ơn bạn đã xác nhận nhận hàng" });
+        });
     });
 });
 
