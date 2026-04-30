@@ -1,27 +1,47 @@
 <template>
-    <div class="add-section">
-        <h2>Thêm sản phẩm mới</h2>
-        <div class="form-group">
-            <input v-model="newProduct.name" placeholder="Tên sản phẩm" class="form-input" />
-            <input v-model.number="newProduct.price" placeholder="Giá Bán (VND)" type="number" class="form-input" />
+    <div class="top-panels">
+        <div class="panel product-panel">
+            <h2>Thêm sản phẩm mới</h2>
+            <div class="form-group">
+                <input v-model="newProduct.name" placeholder="Tên sản phẩm" class="form-input" />
+                <input v-model.number="newProduct.price" placeholder="Giá Bán (VND)" type="number" class="form-input" />
 
-            <select v-model="newProduct.category_id" class="form-input category-select">
-                <option value="" disabled>-- Chọn danh mục --</option>
-                <option v-for="cat in categories" :key="cat.id" :value="cat.id">
+                <select v-model="newProduct.category_id" class="form-input category-select">
+                    <option value="" disabled>-- Chọn danh mục --</option>
+                    <option v-for="cat in categories" :key="cat.id" :value="cat.id">
+                        {{ cat.name }}
+                    </option>
+                </select>
+                <input type="file" @change="handleImageUploadNew" accept="image/*" class="form-input file-input" />
+            </div>
+
+            <div class="form-group">
+                <label>Số lượng kho ban đầu:</label>
+                <input v-model.number="newProduct.stock" placeholder="Kho" type="number" class="form-input" min="0" />
+
+                <label>Giá vốn (Nhập/SX):</label>
+                <input v-model.number="newProduct.import_price" placeholder="Giá nhập" type="number" class="form-input"
+                    min="0" />
+
+                <button @click="addProduct" class="btn green" style="margin-left: 10px;">Thêm sản phẩm</button>
+            </div>
+            <img v-if="newProduct.image" :src="newProduct.image" class="image-preview" />
+        </div>
+
+        <div class="panel category-panel">
+            <h2>Thêm danh mục</h2>
+            <div class="input-group">
+                <input v-model="newCategoryName" placeholder="VD: Áo thun..." class="form-input"
+                    @keyup.enter="addCategory" />
+                <button @click="addCategory" class="btn green" style="white-space: nowrap; flex: 0;">+ Thêm</button>
+            </div>
+
+            <div class="existing-categories">
+                <span v-for="cat in categories" :key="cat.id" class="badge-cat">
                     {{ cat.name }}
-                </option>
-            </select>
-            <input type="file" @change="handleImageUploadNew" accept="image/*" class="form-input file-input" />
+                </span>
+            </div>
         </div>
-        <div class="form-group">
-            <label>Số lượng kho ban đầu:</label>
-            <input v-model.number="newProduct.stock" placeholder="Kho" type="number" class="form-input" min="0" />
-            <label>Giá vốn (Nhập/SX):</label>
-            <input v-model.number="newProduct.import_price" placeholder="Giá nhập" type="number" class="form-input"
-                min="0" />
-            <button @click="addProduct" class="btn green" style="margin-left: 10px;">Thêm sản phẩm</button>
-        </div>
-        <img v-if="newProduct.image" :src="newProduct.image" class="image-preview" />
     </div>
 
     <div class="toolbar">
@@ -65,7 +85,7 @@
         <div class="modal-content" @click.stop>
             <h2>Nhập hàng: <span style="color: #3b82f6;">{{ restockProduct.name }}</span></h2>
             <p style="margin-top: 0; color: #64748b; font-size: 14px;">Tồn kho hiện tại: <strong>{{ restockProduct.stock
-                    }}</strong></p>
+            }}</strong></p>
 
             <div class="form-row">
                 <div class="form-group half-width">
@@ -154,6 +174,7 @@ const categories = ref([]);
 // Cập nhật state thêm import_price
 const newProduct = ref({ name: "", price: 0, imageFile: null, category_id: "", stock: 0, import_price: 0 });
 const editProduct = ref(null);
+const newCategoryName = ref("");
 
 // === STATE CHO NHẬP HÀNG ===
 const restockProduct = ref(null);
@@ -311,14 +332,31 @@ async function submitRestock() {
     }
 }
 
+// Hàm gọi API thêm danh mục
+async function addCategory() {
+    if (!newCategoryName.value.trim()) {
+        toast.warning("Vui lòng nhập tên danh mục!");
+        return;
+    }
+    try {
+        await axios.post(`${import.meta.env.VITE_API_URL}/categories`, {
+            name: newCategoryName.value
+        });
+        toast.success("Thêm danh mục thành công!");
+        newCategoryName.value = "";
+        fetchCategories();
+    } catch (err) {
+        console.error("Lỗi thêm danh mục:", err);
+        toast.error("Không thể thêm danh mục!");
+    }
+}
+
 onMounted(() => {
     fetchCategories();
     fetchProducts();
 
-    // === KHỞI TẠO KẾT NỐI SOCKET.IO ===
     socket = io(import.meta.env.VITE_API_URL);
 
-    // Lắng nghe sự kiện khi có cập nhật sản phẩm từ backend
     socket.on("product_updated", () => {
         console.log("🔄 Đã nhận được tín hiệu cập nhật sản phẩm, đang tải lại danh sách...");
         fetchProducts();
@@ -334,58 +372,111 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* ADD SECTION */
-.add-section {
-    background: #f8fafc;
-    padding: 20px;
-    border-radius: 8px;
-    margin-bottom: 20px;
-    border: 1px solid #e2e8f0;
+.top-panels {
+    display: grid;
+    grid-template-columns: 2.5fr 1fr;
+    gap: 20px;
+    margin-bottom: 25px;
 }
 
-.add-section h2 {
+.panel {
+    background: #f8fafc;
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
+}
+
+.panel h2 {
+    margin-top: 0;
     margin-bottom: 15px;
     color: #1e293b;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* KHU VỰC NHẬP DANH MỤC */
+.input-group {
+    display: flex;
+    gap: 10px;
+}
+
+.existing-categories {
+    margin-top: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-height: 90px;
+    overflow-y: auto;
+    /* Thêm thanh cuộn nếu danh mục quá nhiều */
+}
+
+.badge-cat {
+    background: #ffffff;
+    color: #475569;
+    padding: 5px 12px;
+    border-radius: 15px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .form-group {
     display: flex;
-    gap: 10px;
-    margin-bottom: 10px;
+    gap: 15px;
+    /* Tạo khoảng cách rộng rãi giữa các ô */
+    margin-bottom: 15px;
     flex-wrap: wrap;
     align-items: center;
 }
 
-.form-group label {
-    display: block;
-    width: 100%;
-    font-weight: bold;
-    margin-bottom: 5px;
-    color: #475569;
+.form-input {
+    padding: 12px 16px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 15px;
+    color: #1e293b;
+    background-color: #ffffff;
+    flex: 1;
+    min-width: 180px;
+    transition: all 0.3s ease;
 }
 
-.form-input {
-    padding: 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    flex: 1;
-    min-width: 200px;
-    font-size: 14px;
+.form-input::placeholder {
+    color: #94a3b8;
 }
 
 .form-input:focus {
     outline: none;
-    border-color: #38bdf8;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
 .category-select {
-    background-color: white;
     cursor: pointer;
+    appearance: none;
 }
 
 .file-input {
-    background-color: white;
-    padding: 7px;
+    padding: 9px 12px;
+    background-color: #f8fafc;
+    cursor: pointer;
+}
+
+.btn {
+    padding: 12px 20px;
+    font-size: 15px;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+@media (max-width: 992px) {
+    .top-panels {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* SEARCH */

@@ -201,7 +201,6 @@ watch([activeTab, searchKeyword, selectedMonth], () => {
     currentPage.value = 1; // Reset về trang 1 khi thay đổi bộ lọc
 });
 
-
 // Đếm số đơn hàng theo trạng thái (CHỈ ĐẾM CÁC ĐƠN ĐANG HIỂN THỊ THEO THÁNG VÀ TÌM KIẾM)
 // Sửa lại logic đếm để nó thay đổi linh hoạt theo tháng bạn đang chọn
 const pendingCount = computed(() =>
@@ -294,11 +293,17 @@ onMounted(() => {
     socket.on("order_status_updated", () => {
         fetchOrders();
     });
+    socket.on("new_order_alert", (data) => {
+        console.log(`CÓ ĐƠN HÀNG MỚI TỪ KHÁCH! ID: #${data.orderId}`);
+        fetchOrders();
+        toast.info(`Có đơn hàng mới #${data.orderId} vừa được đặt!`);
+    });
 });
 
 onUnmounted(() => {
     if (socket) {
         socket.off("order_status_updated");
+        socket.off("new_order_alert");
         socket.disconnect();
     }
 });
