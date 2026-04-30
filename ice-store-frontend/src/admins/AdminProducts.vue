@@ -144,9 +144,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, onUnmounted } from "vue";
 import axios from "axios";
 import { toast } from "vue3-toastify";
+import { io } from "socket.io-client";
 
 const products = ref([]);
 const categories = ref([]);
@@ -161,6 +162,7 @@ const restockForm = ref({ quantity: 1, import_price: 0, note: "" });
 const searchKeyword = ref("");
 const currentPage = ref(1);
 const itemsPerPage = 6;
+let socket = null;
 
 async function fetchProducts() {
     try {
@@ -312,6 +314,22 @@ async function submitRestock() {
 onMounted(() => {
     fetchCategories();
     fetchProducts();
+
+    // === KHỞI TẠO KẾT NỐI SOCKET.IO ===
+    socket = io(import.meta.env.VITE_API_URL);
+
+    // Lắng nghe sự kiện khi có cập nhật sản phẩm từ backend
+    socket.on("product_updated", () => {
+        console.log("🔄 Đã nhận được tín hiệu cập nhật sản phẩm, đang tải lại danh sách...");
+        fetchProducts();
+    });
+});
+
+onUnmounted(() => {
+    if (socket) {
+        socket.off("product_updated");
+        socket.disconnect();
+    }
 });
 </script>
 

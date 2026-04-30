@@ -121,10 +121,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from "vue";
+import { ref, onMounted, computed, watch, onUnmounted } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
 import { toast } from "vue3-toastify"
+import { io } from "socket.io-client";
 
 const router = useRouter();
 const userOrders = ref([]);
@@ -141,6 +142,7 @@ const itemsPerPage = 6; // Đặt 6 để grid hiển thị đẹp (bội số c
 const today = new Date();
 const currentYearMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 const selectedMonth = ref(currentYearMonth);
+let socket = null;
 
 async function fetchUserOrders() {
     if (!userId) {
@@ -188,7 +190,6 @@ const filteredOrders = computed(() => {
     });
 });
 
-// 👉 TÍNH TOÁN PHÂN TRANG
 const totalPages = computed(() => Math.ceil(filteredOrders.value.length / itemsPerPage));
 
 const paginatedOrders = computed(() => {
@@ -196,7 +197,6 @@ const paginatedOrders = computed(() => {
     return filteredOrders.value.slice(start, start + itemsPerPage);
 });
 
-// 👉 RESET VỀ TRANG 1 KHI NGƯỜI DÙNG TÌM KIẾM HOẶC ĐỔI TAB/THÁNG
 watch([activeTab, searchKeyword, selectedMonth], () => {
     currentPage.value = 1;
 });
@@ -267,7 +267,30 @@ async function confirmReceived(orderId) {
     }
 }
 
-onMounted(fetchUserOrders);
+// Bật lắng nghe khi mở trang
+onMounted(() => {
+    fetchUserOrders(); // Load dữ liệu lần đầu
+
+    socket = io(import.meta.env.VITE_API_URL);
+
+    socket.on("order_status_updated", () => {
+        console.log("🔄 Đơn hàng vừa được cập nhật, đang tải lại...");
+        fetchUserOrders(); // Cập nhật lại danh sách bên ngoài
+
+        // Nếu khách đang mở cửa sổ "Xem chi tiết", tự động tải lại chi tiết đơn đó luôn!
+        if (selectedOrder.value) {
+            viewOrderDetails(selectedOrder.value.order.id);
+        }
+    });
+});
+
+// Tắt lắng nghe khi rời trang để tránh rò rỉ bộ nhớ
+onUnmounted(() => {
+    if (socket) {
+        socket.off("order_status_updated");
+        socket.disconnect();
+    }
+});
 </script>
 
 <style scoped>

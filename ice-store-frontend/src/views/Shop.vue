@@ -92,10 +92,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
-import { toast } from "vue3-toastify"; // <-- IMPORT THƯ VIỆN UX XỊN SÒ
+import { toast } from "vue3-toastify";
+import { io } from "socket.io-client";
 
 const router = useRouter();
 const products = ref([]);
@@ -108,6 +109,7 @@ const showReviewModal = ref(false);
 const selectedProduct = ref(null);
 const productReviews = ref([]);
 const reviewForm = ref({ rating: 5, comment: "" });
+let socket = null;
 
 // --- CÁC HÀM API SẢN PHẨM & DANH MỤC ---
 async function fetchCategories() {
@@ -228,7 +230,32 @@ async function submitReview() {
 onMounted(() => {
     fetchCategories();
     fetchProducts();
+
+    // === KHỞI TẠO KẾT NỐI SOCKET.IO ===
+    socket = io(import.meta.env.VITE_API_URL);
+
+    // Lắng nghe sự kiện "product_updated" từ server để tự động cập nhật danh sách sản phẩm
+    socket.on("product_updated", () => {
+        console.log("🔄 Sản phẩm đã được cập nhật, đang tải lại danh sách...");
+        fetchProducts(selectedCategory.value);
+    });
+    socket.on("review_updated", () => {
+        if (selectedProduct.value) {
+            console.log("🔄 Đánh giá đã được cập nhật, đang tải lại bình luận...");
+            fetchReviews(selectedProduct.value.id);
+        }
+    });
 });
+
+onUnmounted(() => {
+    if (socket) {
+        socket.off("product_updated");
+        socket.off("review_updated");
+        socket.disconnect();
+        socket = null;
+    }
+});
+
 </script>
 
 <style scoped>

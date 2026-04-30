@@ -129,9 +129,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from "vue";
+import { ref, onMounted, computed, watch, onUnmounted } from "vue";
 import axios from "axios";
 import { toast } from "vue3-toastify";
+import { io } from "socket.io-client";
 
 const orders = ref([]);
 const selectedOrder = ref(null);
@@ -144,6 +145,7 @@ const activeTab = ref('pending');
 const today = new Date();
 const currentYearMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 const selectedMonth = ref(currentYearMonth);
+let socket = null;
 
 async function fetchOrders() {
     loading.value = true;
@@ -284,7 +286,22 @@ async function confirmDelivery(orderId) {
     }
 }
 
-onMounted(fetchOrders);
+onMounted(() => {
+    fetchOrders();
+
+    socket = io(import.meta.env.VITE_API_URL);
+
+    socket.on("order_status_updated", () => {
+        fetchOrders();
+    });
+});
+
+onUnmounted(() => {
+    if (socket) {
+        socket.off("order_status_updated");
+        socket.disconnect();
+    }
+});
 </script>
 
 <style scoped>

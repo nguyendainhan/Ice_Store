@@ -27,7 +27,43 @@ const io = new Server(server, {
 io.on("connection", (socket) => {
     console.log("⚡ Có thiết bị vừa kết nối Socket: " + socket.id);
 });
-// ====================================
+
+// HÀM GÁC CỔNG (MIDDLEWARE) BẢO VỆ API
+const verifyToken = (req, res, next) => {
+    // 1. Lấy token từ request do Frontend gửi lên
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+
+    if (!token) {
+        return res.status(401).json({ message: "Bạn chưa đăng nhập hoặc thiếu Token!" });
+    }
+
+    // 2. Kiểm tra xem Token có đúng là do hệ thống mình tạo ra không
+    jwt.verify(token, "SECRET_KEY", (err, decoded) => {
+        if (err) return res.status(401).json({ message: "Phiên đăng nhập đã hết hạn!" });
+        
+        req.user = decoded; // Lưu lại thông tin user (id, role) để dùng cho các API sau
+
+        // 3. TÍNH NĂNG "ĐÁ" THIẾT BỊ CŨ (Chỉ áp dụng Admin/Staff)
+        if (req.user.role === 'admin' || req.user.role === 'staff') {
+            db.query("SELECT current_token FROM users WHERE id = ?", [req.user.id], (dbErr, result) => {
+                if (dbErr || result.length === 0) return res.status(500).json({ message: "Lỗi xác thực cơ sở dữ liệu" });
+                
+                // So sánh token gửi lên với token mới nhất trong DB
+                if (result[0].current_token !== token) {
+                    return res.status(401).json({ 
+                        message: "Tài khoản của bạn vừa được đăng nhập ở một thiết bị khác!",
+                        force_logout: true 
+                    });
+                }
+                next(); // Token khớp -> Cho phép đi qua cổng!
+            });
+        } else {
+            // Nếu là Khách hàng bình thường thì cho qua luôn
+            next();
+        }
+    });
+};
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -80,7 +116,7 @@ db.connect(err => {
   console.log("Connected to MySQL");
 });
 
-// API DANH MỤC SẢN PHẨM (MỚI THÊM)
+// API DANH MỤC SẢN PHẨM 
 app.get("/categories", (req, res) => {
     db.query("SELECT * FROM categories", (err, result) => {
         if (err) {
@@ -91,7 +127,7 @@ app.get("/categories", (req, res) => {
     });
 });
 
-app.post("/categories", (req, res) => {
+app.post("/categories", verifyToken, (req, res) => {
     const { name } = req.body;
     db.query("INSERT INTO categories (name) VALUES (?)", [name], (err, result) => {
         if (err) return res.status(500).json({ message: "Lỗi thêm danh mục" });
@@ -100,7 +136,7 @@ app.post("/categories", (req, res) => {
 });
 
 
-// === API SẢN PHẨM (ĐÃ SỬA ĐỂ LỌC DANH MỤC) ===
+// === API SẢN PHẨM ===
 app.get("/products", (req, res) => {
     const category_id = req.query.category_id;
     
@@ -122,31 +158,31 @@ app.get("/products", (req, res) => {
 });
 
 // Thêm sản phẩm mới
-app.post("/products", upload.single("image"), (req, res) => {
-  // ĐÓN NHẬN THÊM import_price TỪ FRONTEND
-  const { name, price, category_id, stock, import_price } = req.body; 
-  const image = req.file ? req.file.path : ""; 
-  
-  if (!image) {
-    return res.status(400).json({ message: "Vui lòng chọn ảnh" });
-  }
+app.post("/products", verifyToken, upload.single("image"), (req, res) => {
+    const { name, price, category_id, stock, import_price } = req.body; 
+    const image = req.file ? req.file.path : ""; 
+    
+    if (!image) {
+        return res.status(400).json({ message: "Vui lòng chọn ảnh" });
+    }
   
   // CHÈN THÊM import_price VÀO CÂU LỆNH SQL
-  db.query(
-    "INSERT INTO products (name, price, image, category_id, stock, import_price) VALUES (?,?,?,?,?,?)",
-    [name, price, image, category_id || null, stock || 0, import_price || 0],
-    (err, result) => {
-      if (err) {
-        console.error("Lỗi thêm sản phẩm:", err);
-        return res.status(500).json({ message: "Lỗi thêm sản phẩm" });
-      }
-      res.json({ message: "Thêm sản phẩm thành công", id: result.insertId, imageUrl: image });
-    }
-  );
+    db.query(
+        "INSERT INTO products (name, price, image, category_id, stock, import_price) VALUES (?,?,?,?,?,?)",
+        [name, price, image, category_id || null, stock || 0, import_price || 0],
+        (err, result) => {
+        if (err) {
+            console.error("Lỗi thêm sản phẩm:", err);
+            return res.status(500).json({ message: "Lỗi thêm sản phẩm" });
+        }
+        io.emit("product_updated", { id: result.insertId, name, price, image, category_id, stock, import_price });
+        res.json({ message: "Thêm sản phẩm thành công", id: result.insertId, imageUrl: image });
+        }
+    );
 });
 
-// Sửa sản phẩm (Cập nhật cả danh mục)
-app.put("/products/:id", upload.single("image"), (req, res) => {
+// Sửa sản phẩm
+app.put("/products/:id", verifyToken, upload.single("image"), (req, res) => {
   const { id } = req.params;
   const { name, price, category_id, stock, import_price } = req.body; 
   
@@ -160,11 +196,11 @@ app.put("/products/:id", upload.single("image"), (req, res) => {
           console.error("Lỗi sửa sản phẩm:", err);
           return res.status(500).json({ message: "Lỗi sửa sản phẩm" });
         }
+        io.emit("product_updated", { id, name, price, image, category_id, stock, import_price });
         res.json({ message: "Cập nhật sản phẩm thành công", imageUrl: image });
       }
     );
   } else {
-    // NẾU KHÔNG ĐỔI ẢNH
     db.query(
       "UPDATE products SET name=?, price=?, category_id=?, stock=?, import_price=? WHERE id=?",
       [name, price, category_id || null, stock || 0, import_price || 0, id],
@@ -173,14 +209,15 @@ app.put("/products/:id", upload.single("image"), (req, res) => {
           console.error("Lỗi sửa sản phẩm:", err);
           return res.status(500).json({ message: "Lỗi sửa sản phẩm" });
         }
+        io.emit("product_updated", { id, name, price, category_id, stock, import_price });
         res.json({ message: "Cập nhật thông tin thành công" });
       }
     );
   }
 });
 
-// Xóa sản phẩm (Xóa mềm - Ẩn đi chứ không xóa thật)
-app.delete("/products/:id", (req, res) => {
+// Xóa sản phẩm
+app.delete("/products/:id", verifyToken, (req, res) => {
   const { id } = req.params;
 
   // 1. Chỉ xóa sản phẩm này khỏi giỏ hàng (carts) để khách không mua được nữa
@@ -190,6 +227,7 @@ app.delete("/products/:id", (req, res) => {
     // 2. KHÔNG XÓA trong order_items. Chỉ CẬP NHẬT bảng products thành is_deleted = 1
     db.query("UPDATE products SET is_deleted = 1 WHERE id = ?", [id], (err) => {
       if (err) return res.status(500).json({ message: "Lỗi xóa sản phẩm" });
+      io.emit("product_deleted", { id });
       res.json({ message: "Xóa sản phẩm thành công (Đã ẩn)" });
     });
   });
@@ -204,7 +242,7 @@ app.get("/products/trash", (req, res) => {
 });
 
 // API Khôi phục sản phẩm
-app.put("/products/:id/restore", (req, res) => {
+app.put("/products/:id/restore", verifyToken, (req, res) => {
     const { id } = req.params;
     db.query("UPDATE products SET is_deleted = 0 WHERE id = ?", [id], (err) => {
         if (err) return res.status(500).json({ message: "Lỗi khôi phục sản phẩm" });
@@ -213,7 +251,7 @@ app.put("/products/:id/restore", (req, res) => {
 });
 
 // === API Cảnh báo đơn hàng quá hạn (SLA) ===
-app.get("/orders/overdue", (req, res) => {
+app.get("/orders/overdue", verifyToken, (req, res) => {
     
     // Tính thời gian "30 phút trước" bằng chính Node.js để chuẩn múi giờ
     const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000);
@@ -286,14 +324,28 @@ app.post("/login", (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ message: "Wrong password" });
 
+    // Tạo token mới cho lần đăng nhập này
     const token = jwt.sign({ id: user.id, role: user.role }, "SECRET_KEY");
-    res.json({ 
+
+    const responseData = { 
       token, 
       role: user.role, 
       user_id: user.id, 
       username: user.username,
       is_supervisor: user.is_supervisor || 0
-    });
+    };
+
+    // NẾU LÀ ADMIN HOẶC STAFF -> LƯU TOKEN VÀO DATABASE ĐỂ CHẶN MÁY CŨ
+    if (user.role === 'admin' || user.role === 'staff') {
+      db.query("UPDATE users SET current_token = ? WHERE id = ?", [token, user.id], (updateErr) => {
+        if (updateErr) return res.status(500).json({ message: "Lỗi hệ thống khi cập nhật phiên đăng nhập" });
+        return res.json(responseData);
+      });
+    } 
+    // NẾU LÀ KHÁCH HÀNG -> CHO QUA LUÔN, KHÔNG CẦN CHẶN
+    else {
+      return res.json(responseData);
+    }
   });
 });
 
@@ -305,7 +357,7 @@ app.post("/reset-password", async (req, res) => {
         return res.status(400).json({ message: "Vui lòng nhập đầy đủ thông tin" });
     }
 
-    // 1. CHÚ Ý: Lấy thêm cột 'role' từ database để kiểm tra
+    // Lấy thêm cột 'role' từ database để kiểm tra
     db.query("SELECT id, role FROM users WHERE username = ? AND email = ?", [username, email], async (err, results) => {
         if (err) {
             console.error("Lỗi server:", err);
@@ -340,8 +392,8 @@ app.post("/reset-password", async (req, res) => {
 });
 
 // API Cập nhật ảnh đại diện
-app.put("/profile/avatar", upload.single("avatar"), (req, res) => {
-    const { user_id } = req.headers; // Lấy ID người dùng từ Header
+app.put("/profile/avatar", verifyToken, upload.single("avatar"), (req, res) => {
+    const user_id = req.user.id; // Lấy ID người dùng từ token
 
     if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
     if (!req.file) return res.status(400).json({ message: "Vui lòng chọn ảnh" });
@@ -364,7 +416,7 @@ app.put("/profile/avatar", upload.single("avatar"), (req, res) => {
 });
 
 // === Tạo đơn hàng & Gửi Email ===
-app.post("/orders", (req, res) => {
+app.post("/orders", verifyToken, (req, res) => {
   const { user_id, items, total, delivery_address, phone_number } = req.body;
   
   // Lấy thời gian hiện tại ở múi giờ Taipei (UTC+8)
@@ -378,12 +430,10 @@ app.post("/orders", (req, res) => {
 
       const orderId = result.insertId;
 
-      // === BẮT ĐẦU: PHÁT TÍN HIỆU SOCKET ĐẾN ADMIN ===
       io.emit("new_order_alert", {
           orderId: orderId,
           total: total
       });
-      // ==============================================
 
       items.forEach(item => {
         db.query(
@@ -486,6 +536,7 @@ app.post("/reviews", (req, res) => {
                 console.error("Lỗi lưu đánh giá:", err);
                 return res.status(500).json({ message: "Lỗi hệ thống khi lưu đánh giá" });
             }
+            io.emit("new_review", { product_id, rating }); 
             res.json({ message: "Cảm ơn bạn đã đánh giá sản phẩm!" });
         }
     );
@@ -543,8 +594,8 @@ app.delete("/cart/:id", (req, res) => {
 });
 
 // --- API Lấy thông tin User ---
-app.get("/profile", (req, res) => {
-    const { user_id } = req.headers;
+app.get("/profile", verifyToken, (req, res) => {
+    const user_id = req.user.id;
     if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
 
     db.query("SELECT full_name, email, phone, address, avatar FROM users WHERE id = ?", [user_id], (err, results) => {
@@ -555,8 +606,8 @@ app.get("/profile", (req, res) => {
 });
 
 // --- API Cập nhật thông tin User ---
-app.put("/profile", (req, res) => {
-    const { user_id } = req.headers;
+app.put("/profile", verifyToken, (req, res) => {
+    const user_id = req.user.id;
     const { full_name, email, phone, address } = req.body;
     
     if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
@@ -569,8 +620,8 @@ app.put("/profile", (req, res) => {
 });
 
 // --- API Đổi mật khẩu ---
-app.put("/change-password", async (req, res) => {
-    const { user_id } = req.headers;
+app.put("/change-password", verifyToken, async (req, res) => {
+    const user_id = req.user.id;
     const { old_password, new_password } = req.body;
 
     if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
@@ -607,7 +658,7 @@ app.get("/customers", (req, res) => {
 });
 
 // Xóa khách hàng
-app.delete("/customers/:id", (req, res) => {
+app.delete("/customers/:id", verifyToken, (req, res) => {
     const { id } = req.params;
     
     console.log("Attempting to delete customer:", id);
@@ -693,7 +744,7 @@ app.get("/orders", (req, res) => {
 });
 
 // === API Nhập hàng (Restock) ===
-app.post("/products/:id/restock", (req, res) => {
+app.post("/products/:id/restock", verifyToken, (req, res) => {
     const productId = req.params.id;
     const { quantity_added, import_price, note } = req.body;
     
@@ -721,6 +772,7 @@ app.post("/products/:id/restock", (req, res) => {
                 [quantity_added, import_price || 0, productId],
                 (err) => {
                     if (err) return res.status(500).json({ message: "Lỗi cập nhật kho" });
+                    io.emit("product_updated", { id: productId });
                     res.json({ message: "Nhập hàng thành công! Kho đã được cộng dồn." });
                 }
             );
@@ -781,7 +833,7 @@ app.get("/orders/:order_id", (req, res) => {
 });
 
 // Xác nhận đơn hàng đã giao (cập nhật status)
-app.put("/orders/:order_id/confirm", (req, res) => {
+app.put("/orders/:order_id/confirm", verifyToken, (req, res) => {
     const { order_id } = req.params;
     
     db.query("UPDATE orders SET status = 'awaiting_confirmation' WHERE id = ?", [order_id], (err, result) => {
@@ -798,7 +850,7 @@ app.put("/orders/:order_id/confirm", (req, res) => {
 });
 
 // Khách hàng xác nhận đã nhận hàng (chuyển sang completed)
-app.put("/orders/:order_id/confirm-received", (req, res) => {
+app.put("/orders/:order_id/confirm-received", verifyToken, (req, res) => {
     const { order_id } = req.params;
     
     db.query("UPDATE orders SET status = 'completed' WHERE id = ?", [order_id], (err, result) => {
@@ -841,7 +893,7 @@ app.get("/members", (req, res) => {
 });
 
 // Tạo nhân viên mới
-app.post("/members", async (req, res) => {
+app.post("/members", verifyToken, async (req, res) => {
     const { username, email, password, role } = req.body;
     const { user_id } = req.headers;
     
@@ -886,7 +938,7 @@ app.post("/members", async (req, res) => {
 });
 
 // Cập nhật nhân viên
-app.put("/members/:id", async (req, res) => {
+app.put("/members/:id", verifyToken, async (req, res) => {
     const { id } = req.params;
     const { email, role, password } = req.body;
     const { user_id } = req.headers;
@@ -923,7 +975,7 @@ app.put("/members/:id", async (req, res) => {
 });
 
 // Xóa nhân viên
-app.delete("/members/:id", (req, res) => {
+app.delete("/members/:id", verifyToken, (req, res) => {
     const { id } = req.params;
     const { user_id } = req.headers;
     
