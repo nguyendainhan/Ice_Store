@@ -110,8 +110,9 @@ async function updateProfile() {
 
         toast.success("Cập nhật hồ sơ thành công!");
     } catch (error) {
+        const errorMsg = error.response?.data?.message || "Có lỗi xảy ra khi cập nhật hồ sơ.";
         console.error("Lỗi khi cập nhật hồ sơ:", error);
-        toast.error("Không thể cập nhật hồ sơ. Vui lòng thử lại sau.");
+        toast.error(errorMsg);
     } finally {
         loading.value = false;
     }
@@ -144,7 +145,7 @@ onMounted(() => {
                             <img :src="getTierImage(userTier)" :class="['tier-icon', userTier]" alt="Tier Badge"
                                 style="width: 40px; height: 40px;" />
                             <p class="tier-name" style="margin: 0;">Đẳng cấp: <strong>{{ getTierName(userTier)
-                            }}</strong></p>
+                                    }}</strong></p>
                         </div>
 
                         <p class="spent-info">Tổng chi tiêu: {{ Number(totalSpent).toLocaleString('vi-VN') }} VND</p>

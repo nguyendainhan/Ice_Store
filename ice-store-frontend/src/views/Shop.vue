@@ -50,7 +50,15 @@
         <div v-if="showReviewModal" class="modal-overlay" @click="closeReviewModal">
             <div class="modal-content review-modal" @click.stop>
                 <div class="modal-header">
-                    <h2>Đánh giá: {{ selectedProduct?.name }}</h2>
+                    <div>
+                        <h2>Đánh giá: {{ selectedProduct?.name }}</h2>
+                        <!-- Bổ sung dòng hiển thị sao trung bình này -->
+                        <p style="margin: 5px 0 0 0; color: #f59e0b; font-weight: bold;">
+                            ⭐ {{ averageRating }} / 5.0 <span
+                                style="color: #64748b; font-weight: normal; font-size: 14px;">({{ totalReviews }} lượt
+                                đánh giá)</span>
+                        </p>
+                    </div>
                     <button class="close-btn" @click="closeReviewModal">×</button>
                 </div>
 
@@ -109,6 +117,8 @@ const showReviewModal = ref(false);
 const selectedProduct = ref(null);
 const productReviews = ref([]);
 const reviewForm = ref({ rating: 5, comment: "" });
+const averageRating = ref(0);
+const totalReviews = ref(0);
 let socket = null;
 
 // --- CÁC HÀM API SẢN PHẨM & DANH MỤC ---
@@ -194,7 +204,10 @@ function closeReviewModal() {
 async function fetchReviews(productId) {
     try {
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/products/${productId}/reviews`);
-        productReviews.value = res.data;
+
+        productReviews.value = res.data.reviews || [];
+        averageRating.value = res.data.averageRating || 0;
+        totalReviews.value = res.data.totalReviews || 0;
     } catch (err) {
         toast.error("Không thể tải bình luận!");
     }
@@ -223,7 +236,8 @@ async function submitReview() {
         reviewForm.value.comment = ""; // Xóa form
         await fetchReviews(selectedProduct.value.id); // Tải lại danh sách bình luận
     } catch (err) {
-        toast.error("Có lỗi xảy ra khi gửi đánh giá.");
+        const errorMsg = err.response?.data?.message || "Có lỗi xảy ra khi gửi đánh giá.";
+        toast.error(errorMsg);
     }
 }
 

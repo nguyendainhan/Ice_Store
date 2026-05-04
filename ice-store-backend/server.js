@@ -82,6 +82,28 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+// 2. Hàm gửi email chúc mừng
+const sendGoldVipEmail = (userEmail, fullName) => {
+    const mailOptions = {
+        from: '"Hệ thống IceStore" <nguyendainhan001@gmail.com>',
+        to: userEmail,
+        subject: '🎉 CHÚC MỪNG BẠN ĐÃ THĂNG HẠNG VIP VÀNG TẠI ICESTORE!',
+        html: `
+            <div style="font-family: Arial; padding: 20px; background: #f8fafc; border-radius: 10px;">
+                <h2 style="color: #d97706;">Chào ${fullName},</h2>
+                <p>Hệ thống ghi nhận bạn vừa hoàn thành một đơn hàng mới. Chúc mừng bạn đã chính thức trở thành <strong>Khách hàng VIP Vàng (Gold)</strong> của IceStore!</p>
+                <p>Đẳng cấp VIP Vàng mang đến cho bạn những đặc quyền Voucher giảm giá cực sốc chỉ dành riêng cho giới tinh hoa.</p>
+                <p>Cảm ơn bạn đã luôn tin tưởng và đồng hành cùng IceStore!</p>
+            </div>
+        `
+    };
+
+    transporter.sendMail(mailOptions, (err, info) => {
+        if(err) console.log("Lỗi gửi email VIP:", err);
+        else console.log("Đã gửi email VIP Gold thành công tới:", userEmail);
+    });
+};
+
 // Cấu hình thông tin Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_NAME,
@@ -293,7 +315,6 @@ app.get("/orders/overdue", verifyToken, (req, res) => {
 // === API người dùng ===
 // Đăng ký
 app.post("/register", async (req, res) => {
-    // Nhận thêm full_name, email, phone, address từ Vue gửi lên
     const { username, password, full_name, email, phone, address } = req.body;
 
     if (!username || !password) {
@@ -301,22 +322,45 @@ app.post("/register", async (req, res) => {
     }
 
     try {
-        db.query("SELECT id FROM users WHERE username = ?", [username], async (err, results) => {
-            if (err) return res.status(500).json({ message: "Lỗi kiểm tra username" });
+        let checkQuery = "SELECT username, email, phone FROM users WHERE username = ?";
+        let queryParams = [username];
+
+        if (email) {
+            checkQuery += " OR email = ?";
+            queryParams.push(email);
+        }
+        if (phone) {
+            checkQuery += " OR phone = ?";
+            queryParams.push(phone);
+        }
+
+        db.query(checkQuery, queryParams, async (err, results) => {
+            if (err) return res.status(500).json({ message: "Lỗi kiểm tra dữ liệu tồn tại" });
             
             if (results.length > 0) {
-                return res.status(400).json({ message: "Username đã tồn tại" });
+                for (let row of results) {
+                    if (row.username === username) {
+                        return res.status(400).json({ message: "Tên đăng nhập (Username) đã tồn tại!" });
+                    }
+                    if (email && row.email === email) {
+                        return res.status(400).json({ message: "Email này đã được sử dụng!" });
+                    }
+                    if (phone && row.phone === phone) {
+                        return res.status(400).json({ message: "Số điện thoại này đã được đăng ký!" });
+                    }
+                }
             }
+
             const hashedPassword = await bcrypt.hash(password, 10);
 
-            const query = `
+            const insertQuery = `
                 INSERT INTO users (username, password, full_name, email, phone, address, role, is_supervisor) 
                 VALUES (?, ?, ?, ?, ?, ?, 'customer', 0)
             `;
             
             const values = [username, hashedPassword, full_name || null, email || null, phone || null, address || null];
 
-            db.query(query, values, (err, result) => {
+            db.query(insertQuery, values, (err, result) => {
                 if (err) {
                     console.error("Lỗi đăng ký:", err);
                     return res.status(500).json({ message: "Lỗi tạo tài khoản" });
@@ -434,10 +478,12 @@ app.put("/profile/avatar", verifyToken, upload.single("avatar"), (req, res) => {
 });
 
 function checkAndUpdateUserTier(userId) {
-    db.query("SELECT total_spent FROM users WHERE id = ?", [userId], (err, results) => {
+    db.query("SELECT total_spent, tier, email, full_name FROM users WHERE id = ?", [userId], (err, results) => {
         if (err || results.length === 0) return;
         
-        const spent = results[0].total_spent;
+        const user = results[0];
+        const spent = user.total_spent;
+        const oldTier = user.tier || 'normal';
         let newTier = 'normal';
         
         if (spent >= 50000000) {
@@ -448,13 +494,22 @@ function checkAndUpdateUserTier(userId) {
             newTier = 'bronze'; 
         }
 
-        // Cập nhật hạng mới cho User
-        db.query("UPDATE users SET tier = ? WHERE id = ?", [newTier, userId], (err2) => {
-            if (err2) console.error("Lỗi cập nhật hạng:", err2);
-            else console.log(`User #${userId} đang ở hạng: ${newTier.toUpperCase()}`);
-        });
+        if (oldTier !== newTier) {
+            db.query("UPDATE users SET tier = ? WHERE id = ?", [newTier, userId], (err2) => {
+                if (err2) {
+                    console.error("Lỗi cập nhật hạng:", err2);
+                } else {
+                    console.log(`User #${userId} vừa thăng hạng từ ${oldTier.toUpperCase()} lên ${newTier.toUpperCase()}`);
+                    
+                    if (newTier === 'gold') {
+                        sendGoldVipEmail(user.email, user.full_name);
+                    }
+                }
+            });
+        }
     });
 }
+
 // TẠO ĐƠN HÀNG MỚI
 app.post("/orders", verifyToken, (req, res) => {
     const { user_id, items, total, delivery_address, phone_number, voucher_code } = req.body;
@@ -578,21 +633,40 @@ app.post("/reviews", (req, res) => {
     if (!user_id) return res.status(401).json({ message: "Vui lòng đăng nhập để đánh giá" });
     if (!rating || rating < 1 || rating > 5) return res.status(400).json({ message: "Vui lòng chọn số sao hợp lệ (1-5)" });
 
-    // Lấy thời gian hiện tại chuẩn Đài Loan
-    const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' });
+    const checkPurchasedQuery = `
+        SELECT o.id FROM orders o
+        JOIN order_items oi ON o.id = oi.order_id
+        WHERE o.user_id = ? AND oi.product_id = ? AND o.status = 'completed'
+        LIMIT 1
+    `;
 
-    db.query(
-        "INSERT INTO reviews (product_id, user_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?)",
-        [product_id, user_id, rating, comment, createdAt],
-        (err, result) => {
-            if (err) {
-                console.error("Lỗi lưu đánh giá:", err);
-                return res.status(500).json({ message: "Lỗi hệ thống khi lưu đánh giá" });
-            }
-            io.emit("new_review", { product_id, rating }); 
-            res.json({ message: "Cảm ơn bạn đã đánh giá sản phẩm!" });
+    db.query(checkPurchasedQuery, [user_id, product_id], (err, results) => {
+        if (err) {
+            console.error("Lỗi kiểm tra lịch sử mua hàng:", err);
+            return res.status(500).json({ message: "Lỗi hệ thống" });
         }
-    );
+
+        if (results.length === 0) {
+            return res.status(403).json({ message: "Bạn chỉ được đánh giá những sản phẩm đã mua và nhận hàng thành công!" });
+        }
+
+        const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' });
+
+        db.query(
+            "INSERT INTO reviews (product_id, user_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?)",
+            [product_id, user_id, rating, comment, createdAt],
+            (err2, result) => {
+                if (err2) {
+                    console.error("Lỗi lưu đánh giá:", err2);
+                    return res.status(500).json({ message: "Lỗi hệ thống khi lưu đánh giá" });
+                }
+                
+                io.emit("new_review", { product_id, rating }); 
+                
+                res.json({ message: "Cảm ơn bạn đã đánh giá sản phẩm!" });
+            }
+        );
+    });
 });
 
 // API QUẢN LÝ VOUCHER (DÀNH CHO ADMIN)
@@ -727,7 +801,6 @@ app.post("/vouchers/apply", (req, res) => {
                 if (walletCheck.length === 0) {
                     return res.status(403).json({ message: "Mã này chỉ dành cho khách hàng đặc biệt!" });
                 }
-                // Nếu có trong ví thì mới chạy tiếp các bước check hạn sử dụng, tính tiền... ở dưới
             });
         }
         
@@ -771,7 +844,6 @@ app.post("/vouchers/apply", (req, res) => {
 app.get("/products/:id/reviews", (req, res) => {
     const productId = req.params.id;
 
-    // Nối bảng reviews với users để lấy tên người đánh giá và avatar
     const query = `
         SELECT r.id, r.rating, r.comment, r.created_at, u.full_name, u.username, u.avatar 
         FROM reviews r
@@ -785,7 +857,17 @@ app.get("/products/:id/reviews", (req, res) => {
             console.error("Lỗi lấy danh sách đánh giá:", err);
             return res.status(500).json({ message: "Lỗi hệ thống" });
         }
-        res.json(results);
+        
+        // 👉 TÍNH TOÁN SAO TRUNG BÌNH Ở ĐÂY
+        const totalStars = results.reduce((sum, r) => sum + r.rating, 0);
+        const avgRating = results.length > 0 ? (totalStars / results.length).toFixed(1) : 0;
+        
+        // Trả về Object chứa cả danh sách lẫn thống kê
+        res.json({
+            averageRating: avgRating, 
+            totalReviews: results.length, 
+            reviews: results 
+        });
     });
 });
 
@@ -842,11 +924,50 @@ app.put("/profile", verifyToken, (req, res) => {
     
     if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
 
-    const query = "UPDATE users SET full_name = ?, email = ?, phone = ?, address = ? WHERE id = ?";
-    db.query(query, [full_name, email, phone, address, user_id], (err) => {
-        if (err) return res.status(500).json({ message: "Lỗi cập nhật thông tin" });
-        res.json({ message: "Cập nhật thành công" });
-    });
+    const executeUpdate = () => {
+        const query = "UPDATE users SET full_name = ?, email = ?, phone = ?, address = ? WHERE id = ?";
+        db.query(query, [full_name, email, phone, address, user_id], (err) => {
+            if (err) {
+                console.error("Lỗi cập nhật profile:", err);
+                return res.status(500).json({ message: "Lỗi cập nhật thông tin" });
+            }
+            res.json({ message: "Cập nhật hồ sơ thành công!" });
+        });
+    };
+    let conditions = [];
+    let checkParams = [user_id]; 
+
+    if (email) {
+        conditions.push("email = ?");
+        checkParams.push(email);
+    }
+    if (phone) {
+        conditions.push("phone = ?");
+        checkParams.push(phone);
+    }
+
+    if (conditions.length > 0) {
+        const checkQuery = `SELECT email, phone FROM users WHERE id != ? AND (${conditions.join(" OR ")})`;
+        
+        db.query(checkQuery, checkParams, (err, results) => {
+            if (err) return res.status(500).json({ message: "Lỗi hệ thống khi kiểm tra dữ liệu" });
+
+            if (results.length > 0) {
+                for (let row of results) {
+                    if (email && row.email === email) {
+                        return res.status(400).json({ message: "Email này đã được sử dụng bởi tài khoản khác!" });
+                    }
+                    if (phone && row.phone === phone) {
+                        return res.status(400).json({ message: "Số điện thoại này đã được sử dụng bởi tài khoản khác!" });
+                    }
+                }
+            }
+
+            executeUpdate();
+        });
+    } else {
+        executeUpdate();
+    }
 });
 
 // --- API Đổi mật khẩu ---
@@ -1087,18 +1208,23 @@ app.put("/orders/:order_id/confirm", verifyToken, (req, res) => {
 // Khách hàng xác nhận đã nhận hàng
 app.put("/orders/:order_id/confirm-received", verifyToken, (req, res) => {
     const { order_id } = req.params;
-    
-    db.query("SELECT user_id FROM orders WHERE id = ?", [order_id], (err, results) => {
-        if (err || results.length === 0) return res.status(500).json({ message: "Không tìm thấy đơn" });
+    const userId = req.user.id; 
+
+    db.query("SELECT total FROM orders WHERE id = ? AND user_id = ?", [order_id, userId], (err, results) => {
+        if (err || results.length === 0) return res.status(404).json({ message: "Không tìm thấy đơn" });
         
-        const targetUserId = results[0].user_id;
+        const orderTotal = results[0].total;
 
         db.query("UPDATE orders SET status = 'completed' WHERE id = ?", [order_id], (updateErr) => {
-            if (updateErr) return res.status(500).json({ message: "Lỗi cập nhật" });
-            
-            // Bắn tín hiệu kèm ID
-            io.emit("order_status_updated", { target_user_id: targetUserId });
+            if (updateErr) return res.status(500).json({ message: "Lỗi cập nhật đơn" });
 
+            db.query("UPDATE users SET total_spent = total_spent + ? WHERE id = ?", [orderTotal, userId], (errSpent) => {
+                if (!errSpent) {
+                    checkAndUpdateUserTier(userId);
+                }
+            });
+
+            io.emit("order_status_updated", { target_user_id: userId });
             res.json({ message: "Cảm ơn bạn đã xác nhận nhận hàng" });
         });
     });

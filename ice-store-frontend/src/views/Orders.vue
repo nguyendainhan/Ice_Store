@@ -38,7 +38,26 @@
                             <span class="order-date">{{ formatDate(order.created_at) }}</span>
                         </div>
 
+                        <!-- 👉 ĐÃ THÊM TIMELINE VÀO KHU VỰC NÀY -->
                         <div class="order-body">
+                            <div class="order-timeline">
+                                <!-- Bước 1: Chờ giao hàng -->
+                                <div :class="['timeline-step', { active: getOrderStep(order.status) >= 1 }]">
+                                    <div class="step-icon">📦</div>
+                                    <p>Chờ giao</p>
+                                </div>
+                                <!-- Bước 2: Chờ xác nhận -->
+                                <div :class="['timeline-step', { active: getOrderStep(order.status) >= 2 }]">
+                                    <div class="step-icon">🚚</div>
+                                    <p>Tới nơi</p>
+                                </div>
+                                <!-- Bước 3: Đã nhận -->
+                                <div :class="['timeline-step', { active: getOrderStep(order.status) >= 3 }]">
+                                    <div class="step-icon">✅</div>
+                                    <p>Đã nhận</p>
+                                </div>
+                            </div>
+
                             <div class="order-info">
                                 <label>Tổng tiền:</label>
                                 <span class="total">{{ Number(order.total).toLocaleString('vi-VN') }} VND</span>
@@ -64,6 +83,7 @@
         </div>
     </div>
 
+    <!-- KHU VỰC MODAL CHI TIẾT ĐƠN HÀNG GIỮ NGUYÊN -->
     <div v-if="selectedOrder" class="modal-overlay" @click="selectedOrder = null">
         <div class="modal-content" @click.stop>
             <button class="btn-close" @click="selectedOrder = null">✕</button>
@@ -137,12 +157,18 @@ const userId = localStorage.getItem("user_id");
 
 // KHAI BÁO BIẾN PHÂN TRANG
 const currentPage = ref(1);
-const itemsPerPage = 6; // Đặt 6 để grid hiển thị đẹp (bội số của 2 và 3)
+const itemsPerPage = 6;
 
 const today = new Date();
 const currentYearMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 const selectedMonth = ref(currentYearMonth);
 let socket = null;
+
+const getOrderStep = (status) => {
+    if (status === 'completed') return 3;
+    if (status === 'awaiting_confirmation') return 2;
+    return 1;
+};
 
 async function fetchUserOrders() {
     if (!userId) {
@@ -267,28 +293,21 @@ async function confirmReceived(orderId) {
     }
 }
 
-// Bật lắng nghe khi mở trang
 onMounted(() => {
     fetchUserOrders();
-
     socket = io(import.meta.env.VITE_API_URL);
 
-    // Bổ sung chữ 'data' vào trong ngoặc
     socket.on("order_status_updated", (data) => {
         if (data && data.target_user_id && data.target_user_id != userId) {
             return;
         }
-
-        console.log("🔄 Đơn hàng của MÌNH vừa được cập nhật, đang tải lại...");
         fetchUserOrders();
-
         if (selectedOrder.value) {
             viewOrderDetails(selectedOrder.value.order.id);
         }
     });
 });
 
-// Tắt lắng nghe khi rời trang để tránh rò rỉ bộ nhớ
 onUnmounted(() => {
     if (socket) {
         socket.off("order_status_updated");
@@ -343,21 +362,14 @@ onUnmounted(() => {
     color: #1e293b;
 }
 
-.loading {
+.loading,
+.empty {
     text-align: center;
     padding: 40px;
     color: #666;
     font-size: 16px;
 }
 
-.empty {
-    text-align: center;
-    padding: 40px;
-    color: #999;
-    font-size: 18px;
-}
-
-/* Toolbar */
 .toolbar {
     margin-bottom: 20px;
 }
@@ -415,12 +427,83 @@ onUnmounted(() => {
 .order-body {
     padding: 15px;
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.order-timeline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    padding: 0 10px;
+}
+
+.timeline-step {
+    flex: 1;
+    text-align: center;
+    position: relative;
+    color: #cbd5e1;
+}
+
+/* Đường nối */
+.timeline-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    width: 100%;
+    height: 2px;
+    background-color: #e2e8f0;
+    z-index: 1;
+}
+
+/* Biểu tượng */
+.step-icon {
+    width: 30px;
+    height: 30px;
+    margin: 0 auto 6px auto;
+    background-color: #f8fafc;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    position: relative;
+    z-index: 2;
+    border: 2px solid white;
+    transition: all 0.3s ease;
+}
+
+.timeline-step p {
+    font-size: 11px;
+    font-weight: 700;
+    margin: 0;
+    text-transform: uppercase;
+}
+
+/* Trạng thái Active */
+.timeline-step.active {
+    color: #10b981;
+}
+
+.timeline-step.active .step-icon {
+    background-color: #10b981;
+    color: white;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.timeline-step.active:not(:last-child)::after {
+    background-color: #10b981;
 }
 
 .order-info {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    padding-top: 10px;
+    border-top: 1px dashed #e2e8f0;
 }
 
 .order-info label {
@@ -441,16 +524,20 @@ onUnmounted(() => {
     gap: 10px;
 }
 
-.btn-view {
+.btn-view,
+.btn-confirm {
     flex: 1;
     padding: 8px;
-    background-color: #3b82f6;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
     font-weight: bold;
     transition: background-color 0.3s ease;
+}
+
+.btn-view {
+    background-color: #3b82f6;
 }
 
 .btn-view:hover {
@@ -458,22 +545,14 @@ onUnmounted(() => {
 }
 
 .btn-confirm {
-    flex: 1;
-    padding: 8px;
     background-color: #10b981;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: background-color 0.3s ease;
 }
 
 .btn-confirm:hover {
     background-color: #059669;
 }
 
-/* 👉 CSS STYLE CHO THANH PHÂN TRANG */
+/* Phân trang */
 .pagination {
     margin-top: 30px;
     display: flex;
@@ -495,7 +574,6 @@ onUnmounted(() => {
 
 .pagination button:hover:not(:disabled) {
     background-color: #3b82f6;
-    /* Xanh lam đồng bộ với giao diện user */
     color: white;
     border-color: #3b82f6;
 }
@@ -505,29 +583,7 @@ onUnmounted(() => {
     cursor: not-allowed;
 }
 
-.modal-items-table tfoot td {
-    padding: 15px 10px;
-    border-top: 2px solid #1e293b;
-    background-color: #f8fafc;
-}
-
-.text-right {
-    text-align: right;
-}
-
-.font-weight-bold {
-    font-weight: bold;
-    font-size: 16px;
-    color: #333;
-}
-
-.total-amount {
-    color: #dc2626;
-    font-weight: 900;
-    font-size: 18px;
-}
-
-/* MODAL */
+/* MODAL & TABLE - GIỮ NGUYÊN CSS GỐC */
 .modal-overlay {
     position: fixed;
     top: 0;
@@ -608,19 +664,12 @@ onUnmounted(() => {
     margin: 0;
 }
 
-.info-row .total {
-    color: #dc2626;
-    font-weight: bold;
-    font-size: 16px;
-}
-
 .info-row .address {
     white-space: pre-wrap;
     word-wrap: break-word;
     line-height: 1.5;
 }
 
-/* Items Table */
 .items-table {
     width: 100%;
     border-collapse: collapse;
@@ -640,7 +689,28 @@ onUnmounted(() => {
     border-bottom: 1px solid #ddd;
 }
 
-/* Modal Actions */
+.modal-items-table tfoot td {
+    padding: 15px 10px;
+    border-top: 2px solid #1e293b;
+    background-color: #f8fafc;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.font-weight-bold {
+    font-weight: bold;
+    font-size: 16px;
+    color: #333;
+}
+
+.total-amount {
+    color: #dc2626;
+    font-weight: 900;
+    font-size: 18px;
+}
+
 .modal-actions {
     display: flex;
     gap: 10px;
