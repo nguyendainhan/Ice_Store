@@ -6,7 +6,6 @@
             </div>
 
             <div class="menu">
-
                 <template v-if="userRole === 'admin'">
                     <router-link to="/admin/dashboard" class="nav-link"
                         :class="{ active: isActive('/admin/dashboard') }">
@@ -19,21 +18,24 @@
                         :class="{ active: isActive('/admin/customers') }">
                         Quản lý khách hàng
                     </router-link>
+                    <router-link to="/admin/orders" class="nav-link" :class="{ active: isActive('/admin/orders') }">
+                        Quản lý đơn hàng
+                    </router-link>
+
+                    <router-link to="/admin/vouchers" class="nav-link" :class="{ active: isActive('/admin/vouchers') }">
+                        Quản lý mã giảm giá
+                    </router-link>
+
+                    <router-link v-if="userRole === 'admin' && isSupervisor" to="/admin/members" class="nav-link"
+                        :class="{ active: isActive('/admin/members') }">
+                        Quản lý nhân viên
+                    </router-link>
+
+                    <router-link v-if="userRole === 'admin'" to="/admin/recycle-bin" class="nav-link"
+                        :class="{ active: isActive('/admin/recycle-bin') }">
+                        Thùng rác
+                    </router-link>
                 </template>
-
-                <router-link to="/admin/orders" class="nav-link" :class="{ active: isActive('/admin/orders') }">
-                    Quản lý đơn hàng
-                </router-link>
-
-                <router-link v-if="userRole === 'admin' && isSupervisor" to="/admin/members" class="nav-link"
-                    :class="{ active: isActive('/admin/members') }">
-                    Quản lý nhân viên
-                </router-link>
-
-                <router-link v-if="userRole === 'admin'" to="/admin/recycle-bin" class="nav-link"
-                    :class="{ active: isActive('/admin/recycle-bin') }">
-                    Thùng rác
-                </router-link>
             </div>
 
             <div class="admin-section">
@@ -121,7 +123,6 @@ function logout() {
 </script>
 
 <style scoped>
-/* Toàn bộ CSS của bạn được giữ nguyên hoàn toàn */
 .admin-navbar {
     position: fixed;
     top: 0;
@@ -137,7 +138,7 @@ function logout() {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 15px 30px;
+    padding: 15px 10px;
     box-sizing: border-box;
     max-width: 1400px;
     margin: 0 auto;
@@ -152,6 +153,7 @@ function logout() {
 
 .logo-text {
     font-size: 20px;
+    margin-right: 15px;
     font-weight: bold;
     text-decoration: none;
     color: #38bdf8;
@@ -165,7 +167,8 @@ function logout() {
 /* Menu */
 .menu {
     display: flex;
-    gap: 30px;
+    gap: 20px;
+    margin: 0 20px;
     flex: 1;
     justify-content: center;
 }

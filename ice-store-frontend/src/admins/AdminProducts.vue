@@ -39,6 +39,7 @@
             <div class="existing-categories">
                 <span v-for="cat in categories" :key="cat.id" class="badge-cat">
                     {{ cat.name }}
+                    <button @click="deleteCategory(cat.id)" class="btn-delete-cat" title="Xóa danh mục">✕</button>
                 </span>
             </div>
         </div>
@@ -351,6 +352,24 @@ async function addCategory() {
     }
 }
 
+// Hàm gọi API xóa danh mục
+async function deleteCategory(id) {
+    if (!confirm("Bạn có chắc muốn xóa danh mục này? Các sản phẩm bên trong sẽ chuyển thành 'Chưa phân loại'.")) {
+        return;
+    }
+
+    try {
+        await axios.delete(`${import.meta.env.VITE_API_URL}/categories/${id}`);
+        toast.success("Đã xóa danh mục!");
+
+        fetchCategories(); // Tải lại rổ danh mục
+        fetchProducts();   // Tải lại danh sách sản phẩm (để cập nhật lại những cái vừa bị đổi thành "Chưa phân loại")
+    } catch (err) {
+        console.error("Lỗi xóa danh mục:", err);
+        toast.error("Không thể xóa danh mục!");
+    }
+}
+
 onMounted(() => {
     fetchCategories();
     fetchProducts();
@@ -411,6 +430,39 @@ onUnmounted(() => {
     max-height: 90px;
     overflow-y: auto;
     /* Thêm thanh cuộn nếu danh mục quá nhiều */
+}
+
+.badge-cat {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #ffffff;
+    color: #475569;
+    padding: 4px 10px;
+    border-radius: 15px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.btn-delete-cat {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0 2px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-delete-cat:hover {
+    color: #ef4444;
+    background: #fee2e2;
 }
 
 .badge-cat {

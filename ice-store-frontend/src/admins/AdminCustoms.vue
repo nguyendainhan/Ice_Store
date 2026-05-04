@@ -13,6 +13,8 @@
                         <th>Tên đăng nhập</th>
                         <th>Họ và tên</th>
                         <th>Số điện thoại</th>
+                        <!-- 👉 THÊM CỘT HẠNG VÀO ĐÂY -->
+                        <th>Hạng</th>
                         <th>Ngày tạo</th>
                         <th>Hành động</th>
                     </tr>
@@ -23,6 +25,14 @@
                         <td style="font-weight: bold;">{{ customer.username }}</td>
                         <td>{{ customer.full_name || '---' }}</td>
                         <td>{{ customer.phone || '---' }}</td>
+
+                        <!-- 👉 HIỂN THỊ HUY HIỆU HẠNG TRONG BẢNG -->
+                        <td>
+                            <span :class="['tier-badge', customer.tier || 'normal']">
+                                {{ getTierName(customer.tier || 'normal') }}
+                            </span>
+                        </td>
+
                         <td>{{ formatDate(customer.created_at) }}</td>
                         <td class="actions">
                             <button @click="viewCustomer(customer)" class="btn yellow">Xem</button>
@@ -30,7 +40,7 @@
                         </td>
                     </tr>
                     <tr v-if="filteredCustomers.length === 0">
-                        <td colspan="6" class="empty">Không tìm thấy khách hàng nào.</td>
+                        <td colspan="7" class="empty">Không tìm thấy khách hàng nào.</td>
                     </tr>
                 </tbody>
             </table>
@@ -63,6 +73,18 @@
                         <label>Số điện thoại:</label>
                         <p>{{ selectedCustomer.phone || 'Chưa cập nhật' }}</p>
                     </div>
+
+                    <!-- 👉 THÊM HẠNG VÀO MODAL CHI TIẾT -->
+                    <div class="info-group" style="grid-column: 1 / -1;">
+                        <label>Đẳng cấp thành viên:</label>
+                        <p style="background: transparent; border: none; padding: 0;">
+                            <span :class="['tier-badge', selectedCustomer.tier || 'normal']"
+                                style="font-size: 14px; padding: 6px 12px;">
+                                {{ getTierName(selectedCustomer.tier || 'normal') }}
+                            </span>
+                        </p>
+                    </div>
+
                     <div class="info-group" style="grid-column: 1 / -1;">
                         <label>Email:</label>
                         <p>{{ selectedCustomer.email || 'Chưa cập nhật' }}</p>
@@ -96,6 +118,12 @@ const selectedCustomer = ref(null);
 const currentPage = ref(1);
 const itemsPerPage = 10;
 
+// 👉 HÀM DỊCH TÊN HẠNG
+const getTierName = (tier) => {
+    const names = { normal: 'Thành viên Mới', bronze: 'Hạng Đồng', silver: 'Hạng Bạc', gold: 'VIP Vàng' };
+    return names[tier] || 'Thành viên Mới';
+};
+
 async function fetchCustomers() {
     try {
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/customers`);
@@ -106,7 +134,7 @@ async function fetchCustomers() {
     }
 }
 
-// Lọc theo tìm kiếm (Đã nâng cấp: tìm được cả Tên, Email, SĐT)
+// Lọc theo tìm kiếm
 const filteredCustomers = computed(() => {
     const kw = searchKeyword.value.toLowerCase();
     return customers.value.filter(c => {
@@ -149,7 +177,6 @@ async function deleteCustomer(id) {
             await axios.delete(`${import.meta.env.VITE_API_URL}/customers/${id}`);
             toast.success("Xóa khách hàng thành công");
 
-            // Trở về trang 1 nếu xóa hết item ở trang cuối
             if (paginatedCustomers.value.length === 1 && currentPage.value > 1) {
                 currentPage.value--;
             }
@@ -347,7 +374,6 @@ onMounted(fetchCustomers);
     padding-bottom: 12px;
 }
 
-/* Dàn layout 2 cột cho Modal nhìn chuyên nghiệp hơn */
 .info-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -380,6 +406,41 @@ onMounted(fetchCustomers);
     margin-top: 28px;
     padding-top: 20px;
     border-top: 1px solid #e2e8f0;
+}
+
+/* 👉 CSS CHO HUY HIỆU HẠNG TRONG BẢNG ADMIN */
+.tier-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.tier-badge.normal {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.tier-badge.bronze {
+    background: #fef3c7;
+    color: #b45309;
+    border: 1px solid #fde68a;
+}
+
+.tier-badge.silver {
+    background: #f8fafc;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.tier-badge.gold {
+    background: #fef08a;
+    color: #854d0e;
+    border: 1px solid #fde047;
 }
 
 /* RESPONSIVE */

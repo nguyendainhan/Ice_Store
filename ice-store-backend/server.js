@@ -135,6 +135,24 @@ app.post("/categories", verifyToken, (req, res) => {
     });
 });
 
+// Xóa danh mục
+app.delete("/categories/:id", verifyToken, (req, res) => {
+    const { id } = req.params;
+
+    // Bước 1: Chuyển tất cả sản phẩm thuộc danh mục này thành "Chưa phân loại" (category_id = NULL)
+    db.query("UPDATE products SET category_id = NULL WHERE category_id = ?", [id], (err) => {
+        if (err) {
+            console.error("Lỗi cập nhật sản phẩm khi xóa danh mục:", err);
+            return res.status(500).json({ message: "Lỗi hệ thống" });
+        }
+
+        // Bước 2: Tiến hành xóa danh mục
+        db.query("DELETE FROM categories WHERE id = ?", [id], (err) => {
+            if (err) return res.status(500).json({ message: "Lỗi xóa danh mục" });
+            res.json({ message: "Xóa danh mục thành công" });
+        });
+    });
+});
 
 // === API SẢN PHẨM ===
 app.get("/products", (req, res) => {
@@ -415,93 +433,128 @@ app.put("/profile/avatar", verifyToken, upload.single("avatar"), (req, res) => {
     });
 });
 
-// === Tạo đơn hàng & Gửi Email ===
-app.post("/orders", verifyToken, (req, res) => {
-  const { user_id, items, total, delivery_address, phone_number } = req.body;
-  
-  // Lấy thời gian hiện tại ở múi giờ Taipei (UTC+8)
-  const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' });
-
-  db.query(
-    "INSERT INTO orders (user_id, total, created_at, delivery_address, phone_number) VALUES (?,?,?,?,?)",
-    [user_id, total, createdAt, delivery_address, phone_number],
-    (err, result) => {
-      if (err) return res.status(500).json({ message: "Lỗi tạo đơn hàng" });
-
-      const orderId = result.insertId;
-
-      io.emit("new_order_alert", {
-          orderId: orderId,
-          total: total
-      });
-
-      items.forEach(item => {
-        db.query(
-          "INSERT INTO order_items (order_id, product_id, quantity) VALUES (?,?,?)",
-          [orderId, item.product_id, item.quantity]
-        );
+function checkAndUpdateUserTier(userId) {
+    db.query("SELECT total_spent FROM users WHERE id = ?", [userId], (err, results) => {
+        if (err || results.length === 0) return;
         
+        const spent = results[0].total_spent;
+        let newTier = 'normal';
+        
+        if (spent >= 50000000) {
+            newTier = 'gold';      
+        } else if (spent >= 20000000) {
+            newTier = 'silver';
+        } else if (spent >= 5000000) {
+            newTier = 'bronze'; 
+        }
+
+        // Cập nhật hạng mới cho User
+        db.query("UPDATE users SET tier = ? WHERE id = ?", [newTier, userId], (err2) => {
+            if (err2) console.error("Lỗi cập nhật hạng:", err2);
+            else console.log(`User #${userId} đang ở hạng: ${newTier.toUpperCase()}`);
+        });
+    });
+}
+// TẠO ĐƠN HÀNG MỚI
+app.post("/orders", verifyToken, (req, res) => {
+    const { user_id, items, total, delivery_address, phone_number, voucher_code } = req.body;
+    
+    const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' });
+  
+    db.query(
+      "INSERT INTO orders (user_id, total, created_at, delivery_address, phone_number, voucher_code) VALUES (?,?,?,?,?,?)",
+      [user_id, total, createdAt, delivery_address, phone_number, voucher_code],
+      (err, result) => {
+        if (err) return res.status(500).json({ message: "Lỗi tạo đơn hàng" });
+  
+        const orderId = result.insertId;
+  
+        io.emit("new_order_alert", {
+            orderId: orderId,
+            total: total
+        });
+  
+        items.forEach(item => {
+          db.query(
+            "INSERT INTO order_items (order_id, product_id, quantity) VALUES (?,?,?)",
+            [orderId, item.product_id, item.quantity]
+          );
+          
+          db.query(
+            "UPDATE products SET stock = stock - ? WHERE id = ?",
+            [item.quantity, item.product_id]
+          );
+        });
+
         db.query(
-          "UPDATE products SET stock = stock - ? WHERE id = ?",
-          [item.quantity, item.product_id]
+            "UPDATE users SET total_spent = total_spent + ? WHERE id = ?",
+            [total, user_id],
+            (errSpent) => {
+                if (errSpent) console.error("Lỗi cộng điểm tích lũy:", errSpent);
+                else checkAndUpdateUserTier(user_id); // Gọi hàm xét thăng hạng
+            }
         );
-      });
 
-      // BẮT ĐẦU QUÁ TRÌNH GỬI EMAIL TỰ ĐỘNG
-      // Lấy email và tên của khách hàng từ bảng users
-      db.query("SELECT email, full_name, username FROM users WHERE id = ?", [user_id], (err, users) => {
-          // Chỉ gửi nếu lấy được thông tin và khách có nhập email
-          if (!err && users.length > 0 && users[0].email) {
-              const userEmail = users[0].email;
-              // Nếu khách chưa cập nhật họ tên, dùng tạm username
-              const customerName = users[0].full_name || users[0].username; 
-
-              // Soạn thư HTML
-              const mailOptions = {
-                  from: `"Cửa hàng IceStore" <${process.env.EMAIL_USER}>`,
-                  to: userEmail,
-                  subject: `🎉 Xác nhận đơn hàng #${orderId} - IceStore`,
-                  html: `
-                      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                          <div style="background-color: #1e293b; padding: 20px; text-align: center;">
-                              <h1 style="margin: 0; color: #38bdf8; font-size: 28px; letter-spacing: 1px;">IceStore</h1>
-                          </div>
-                          <div style="padding: 30px; background-color: #ffffff;">
-                              <h2 style="color: #0f172a; margin-top: 0;">Xin chào ${customerName}!</h2>
-                              <p style="color: #475569; font-size: 16px; line-height: 1.6;">Cảm ơn bạn đã tin tưởng và đặt hàng tại IceStore. Đơn hàng của bạn đã được hệ thống ghi nhận thành công và đang trong quá trình xử lý.</p>
-                              
-                              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                                  <h3 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Thông tin đơn hàng #${orderId}</h3>
-                                  <p style="margin: 10px 0; color: #334155;"><strong>📍 Giao đến:</strong> ${delivery_address}</p>
-                                  <p style="margin: 10px 0; color: #334155;"><strong>📞 Số điện thoại:</strong> ${phone_number}</p>
-                                  <p style="margin: 10px 0; color: #334155;"><strong>🕒 Thời gian đặt:</strong> ${createdAt}</p>
-                                  <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1;">
-                                      <p style="margin: 0; font-size: 18px; color: #1e293b;"><strong>Tổng thanh toán:</strong> <span style="color: #dc2626; font-size: 22px; font-weight: bold; float: right;">${Number(total).toLocaleString('vi-VN')} VND</span></p>
-                                  </div>
-                              </div>
-                              
-                              <p style="color: #475569; font-size: 15px;">Chúng tôi sẽ liên hệ với bạn trong thời gian sớm nhất để xác nhận thời gian giao đá lạnh.</p>
-                              <p style="color: #475569; font-size: 15px; margin-bottom: 0;">Trân trọng,<br><strong style="color: #1e293b;">Đội ngũ IceStore</strong></p>
-                          </div>
-                      </div>
-                  `
-              };
-
-              // Phát lệnh gửi thư ngầm (không làm chậm tốc độ load web của khách)
-              transporter.sendMail(mailOptions, (error, info) => {
-                  if (error) {
-                      console.error("Lỗi gửi email Nodemailer:", error);
-                  } else {
-                      console.log("Đã gửi email hóa đơn thành công đến:", userEmail);
-                  }
-              });
-          }
-      });
-
-      // Phản hồi cho Frontend biết là đặt hàng xong rồi (Dù email gửi lâu thì web vẫn chạy nhanh)
-      res.json({ message: "Order created", orderId });
-    }
-  );
+        if (voucher_code) {
+            db.query(
+                "UPDATE vouchers SET used_count = used_count + 1 WHERE code = ?",
+                [voucher_code],
+                (errVoucher) => {
+                    if (errVoucher) console.error("Lỗi tăng lượt dùng voucher:", errVoucher);
+                    else console.log(`Đã tăng lượt sử dụng cho mã voucher: ${voucher_code}`);
+                }
+            );
+        }
+  
+        db.query("SELECT email, full_name, username FROM users WHERE id = ?", [user_id], (err, users) => {
+            if (!err && users.length > 0 && users[0].email) {
+                const userEmail = users[0].email;
+                const customerName = users[0].full_name || users[0].username; 
+  
+                const mailOptions = {
+                    from: `"Cửa hàng IceStore" <${process.env.EMAIL_USER}>`,
+                    to: userEmail,
+                    subject: `🎉 Xác nhận đơn hàng #${orderId} - IceStore`,
+                    html: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                            <div style="background-color: #1e293b; padding: 20px; text-align: center;">
+                                <h1 style="margin: 0; color: #38bdf8; font-size: 28px; letter-spacing: 1px;">IceStore</h1>
+                            </div>
+                            <div style="padding: 30px; background-color: #ffffff;">
+                                <h2 style="color: #0f172a; margin-top: 0;">Xin chào ${customerName}!</h2>
+                                <p style="color: #475569; font-size: 16px; line-height: 1.6;">Cảm ơn bạn đã tin tưởng và đặt hàng tại IceStore. Đơn hàng của bạn đã được hệ thống ghi nhận thành công và đang trong quá trình xử lý.</p>
+                                
+                                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin: 25px 0;">
+                                    <h3 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Thông tin đơn hàng #${orderId}</h3>
+                                    <p style="margin: 10px 0; color: #334155;"><strong>📍 Giao đến:</strong> ${delivery_address}</p>
+                                    <p style="margin: 10px 0; color: #334155;"><strong>📞 Số điện thoại:</strong> ${phone_number}</p>
+                                    <p style="margin: 10px 0; color: #334155;"><strong>🕒 Thời gian đặt:</strong> ${createdAt}</p>
+                                    <p style="margin: 10px 0; color: #10b981;"><strong>🎟️ Mã áp dụng:</strong> ${voucher_code || 'Không có'}</p>
+                                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1;">
+                                        <p style="margin: 0; font-size: 18px; color: #1e293b;"><strong>Tổng thanh toán:</strong> <span style="color: #dc2626; font-size: 22px; font-weight: bold; float: right;">${Number(total).toLocaleString('vi-VN')} VND</span></p>
+                                    </div>
+                                </div>
+                                
+                                <p style="color: #475569; font-size: 15px;">Chúng tôi sẽ liên hệ với bạn trong thời gian sớm nhất để xác nhận thời gian giao hàng.</p>
+                                <p style="color: #475569; font-size: 15px; margin-bottom: 0;">Trân trọng,<br><strong style="color: #1e293b;">Đội ngũ IceStore</strong></p>
+                            </div>
+                        </div>
+                    `
+                };
+  
+                transporter.sendMail(mailOptions, (error, info) => {
+                    if (error) {
+                        console.error("Lỗi gửi email Nodemailer:", error);
+                    } else {
+                        console.log("Đã gửi email hóa đơn thành công đến:", userEmail);
+                    }
+                });
+            }
+        });
+  
+        res.json({ message: "Order created", orderId });
+      }
+    );
 });
 
 // Thêm hoặc cập nhật sản phẩm trong giỏ hàng
@@ -541,6 +594,178 @@ app.post("/reviews", (req, res) => {
         }
     );
 });
+
+// API QUẢN LÝ VOUCHER (DÀNH CHO ADMIN)
+
+// Lấy danh sách Voucher
+app.get("/vouchers", verifyToken, (req, res) => {
+    db.query("SELECT * FROM vouchers ORDER BY created_at DESC", (err, results) => {
+        if (err) return res.status(500).json({ message: "Lỗi lấy danh sách voucher" });
+        res.json(results);
+    });
+});
+
+app.get("/vouchers/wallet/:user_id", verifyToken, (req, res) => {
+    const { user_id } = req.params;
+
+    db.query("SELECT tier FROM users WHERE id = ?", [user_id], (err, users) => {
+        if (err || users.length === 0) return res.status(404).json({ message: "User not found" });
+        
+        const userTier = users[0].tier || 'normal';
+        const tierRanks = { 'normal': 0, 'bronze': 1, 'silver': 2, 'gold': 3 };
+        const userRank = tierRanks[userTier];
+
+        const query = `
+            SELECT DISTINCT v.* 
+            FROM vouchers v
+            LEFT JOIN user_vouchers uv ON v.id = uv.voucher_id AND uv.user_id = ?
+            WHERE (
+                (v.type = 'public' AND (
+                    v.target_tier = 'all' OR 
+                    (v.target_tier = 'bronze' AND ? >= 1) OR 
+                    (v.target_tier = 'silver' AND ? >= 2) OR 
+                    (v.target_tier = 'gold' AND ? >= 3)
+                )) 
+                OR uv.user_id = ?
+            )
+              AND (uv.is_used IS NULL OR uv.is_used = FALSE)
+              AND v.expiry_date > NOW()
+              AND v.used_count < v.usage_limit
+            ORDER BY v.discount_percent DESC
+        `;
+
+        db.query(query, [user_id, userRank, userRank, userRank, user_id], (err2, results) => {
+            if (err2) return res.status(500).json({ message: "Lỗi lấy ví" });
+            
+            res.json({ 
+                userTier: userTier, 
+                vouchers: results 
+            }); 
+        });
+    });
+});
+
+// API KHÁCH HÀNG TỰ LƯU MÃ PUBLIC VÀO VÍ
+app.post("/vouchers/save", verifyToken, (req, res) => {
+    const { user_id, voucher_code } = req.body;
+
+    db.query("SELECT id FROM vouchers WHERE code = ? AND type = 'public'", [voucher_code], (err, vouchers) => {
+        if (err || vouchers.length === 0) return res.status(404).json({ message: "Mã không hợp lệ hoặc không thể lưu" });
+
+        const voucher_id = vouchers[0].id;
+
+        db.query("INSERT INTO user_vouchers (user_id, voucher_id) VALUES (?, ?)", [user_id, voucher_id], (err2) => {
+            if (err2) {
+                if (err2.code === 'ER_DUP_ENTRY') return res.status(400).json({ message: "Bạn đã lưu mã này vào ví rồi!" });
+                return res.status(500).json({ message: "Lỗi lưu mã" });
+            }
+            io.emit("voucher_saved", { user_id, voucher_code });
+            res.json({ message: "Đã lưu mã vào ví thành công!" });
+        });
+    });
+});
+
+// Thêm Voucher mới
+app.post("/vouchers", verifyToken, (req, res) => {
+    const { code, discount_percent, max_discount, min_order_value, usage_limit, expiry_date, type, target_user_id, target_tier } = req.body;
+    
+    db.query("SELECT id FROM vouchers WHERE code = ?", [code], (err, results) => {
+        if (results.length > 0) return res.status(400).json({ message: "Mã code này đã tồn tại!" });
+
+        const voucherType = type === 'private' ? 'private' : 'public';
+        const voucherTier = target_tier || 'all'; 
+
+        db.query(
+            "INSERT INTO vouchers (code, discount_percent, max_discount, min_order_value, usage_limit, expiry_date, type, target_tier) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [code, discount_percent, max_discount, min_order_value, usage_limit, expiry_date, voucherType, voucherTier],
+            (err2, result) => {
+                if (err2) return res.status(500).json({ message: "Lỗi tạo voucher" });
+
+                const newVoucherId = result.insertId;
+
+                // Nếu là mã Private thì bắn vào ví như cũ
+                if (voucherType === 'private' && target_user_id) {
+                    db.query("INSERT INTO user_vouchers (user_id, voucher_id) VALUES (?, ?)", [target_user_id, newVoucherId], (err3) => {
+                        if (err3) return res.status(400).json({ message: "Đã tạo mã nhưng lỗi gửi vào ví" });
+                        res.json({ message: `Đã tạo mã Private cho khách #${target_user_id}!` });
+                    });
+                } else {
+                    res.json({ message: "Tạo mã Public thành công!" });
+                }
+            }
+        );
+    });
+});
+
+// Xóa Voucher
+app.delete("/vouchers/:id", verifyToken, (req, res) => {
+    const { id } = req.params;
+    db.query("DELETE FROM vouchers WHERE id = ?", [id], (err) => {
+        if (err) return res.status(500).json({ message: "Lỗi xóa voucher" });
+        res.json({ message: "Xóa voucher thành công" });
+    });
+});
+
+// API KIỂM TRA MÃ GIẢM GIÁ (DÀNH CHO KHÁCH HÀNG)
+app.post("/vouchers/apply", (req, res) => {
+    const { code, cart_total } = req.body;
+
+    if (!code) return res.status(400).json({ message: "Vui lòng nhập mã giảm giá" });
+
+    db.query("SELECT * FROM vouchers WHERE code = ?", [code], (err, results) => {
+        if (err) return res.status(500).json({ message: "Lỗi hệ thống khi kiểm tra mã" });
+        
+        // Kiểm tra mã có tồn tại không
+        if (results.length === 0) return res.status(404).json({ message: "Mã giảm giá không tồn tại hoặc sai tả!" });
+
+        const voucher = results[0];
+
+        if (voucher.type === 'private') {
+            db.query("SELECT * FROM user_vouchers WHERE user_id = ? AND voucher_id = ? AND is_used = FALSE", 
+            [req.body.user_id, voucher.id], 
+            (err3, walletCheck) => {
+                if (walletCheck.length === 0) {
+                    return res.status(403).json({ message: "Mã này chỉ dành cho khách hàng đặc biệt!" });
+                }
+                // Nếu có trong ví thì mới chạy tiếp các bước check hạn sử dụng, tính tiền... ở dưới
+            });
+        }
+        
+        // Lấy thời gian hiện tại ở Đài Loan để so sánh chuẩn xác
+        const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+        const expiry = new Date(voucher.expiry_date);
+
+        // Kiểm tra hạn sử dụng
+        if (expiry < now) {
+            return res.status(400).json({ message: "Mã giảm giá này đã hết hạn sử dụng!" });
+        }
+
+        // Kiểm tra số lượng lượt dùng
+        if (voucher.used_count >= voucher.usage_limit) {
+            return res.status(400).json({ message: "Rất tiếc! Mã giảm giá này đã hết lượt sử dụng." });
+        }
+
+        // Kiểm tra điều kiện đơn hàng tối thiểu
+        if (cart_total < voucher.min_order_value) {
+            return res.status(400).json({ 
+                message: `Đơn hàng của bạn chưa đạt mức tối thiểu ${voucher.min_order_value.toLocaleString('vi-VN')} VND để dùng mã này.` 
+            });
+        }
+
+        let discount_amount = (cart_total * voucher.discount_percent) / 100;
+        
+        if (discount_amount > voucher.max_discount) {
+            discount_amount = voucher.max_discount;
+        }
+
+        res.json({
+            message: "Áp dụng mã thành công!",
+            discount_amount: discount_amount,
+            voucher_code: voucher.code
+        });
+    });
+});
+
 
 // Lấy danh sách đánh giá của một sản phẩm cụ thể
 app.get("/products/:id/reviews", (req, res) => {
@@ -598,11 +823,16 @@ app.get("/profile", verifyToken, (req, res) => {
     const user_id = req.user.id;
     if (!user_id) return res.status(401).json({ message: "Chưa đăng nhập" });
 
-    db.query("SELECT full_name, email, phone, address, avatar FROM users WHERE id = ?", [user_id], (err, results) => {
-        if (err) return res.status(500).json({ message: "Lỗi server" });
-        if (results.length === 0) return res.status(404).json({ message: "Không tìm thấy user" });
-        res.json(results[0]);
-    });
+    db.query(
+        "SELECT full_name, email, phone, address, avatar, tier, total_spent FROM users WHERE id = ?", 
+        [user_id], 
+        (err, results) => {
+            if (err) return res.status(500).json({ message: "Lỗi server" });
+            if (results.length === 0) return res.status(404).json({ message: "Không tìm thấy user" });
+            
+            res.json(results[0]);
+        }
+    );
 });
 
 // --- API Cập nhật thông tin User ---
@@ -648,7 +878,7 @@ app.put("/change-password", verifyToken, async (req, res) => {
 // Lấy danh sách tất cả khách hàng
 app.get("/customers", (req, res) => {
     // Thêm các cột dữ liệu mới vào câu lệnh SELECT
-    db.query("SELECT id, username, full_name, email, phone, address, created_at FROM users WHERE role = 'customer' ORDER BY created_at DESC", (err, result) => {
+    db.query("SELECT id, username, full_name, email, phone, address, created_at, tier FROM users WHERE role = 'customer' ORDER BY created_at DESC", (err, result) => {
         if (err) {
             console.error("Lỗi lấy danh sách khách hàng:", err);
             return res.status(500).json({ message: "Lỗi lấy danh sách khách hàng", error: err.message });
