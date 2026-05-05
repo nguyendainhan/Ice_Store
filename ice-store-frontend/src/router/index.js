@@ -18,6 +18,7 @@ import ChangePassword from '../views/ChangePassword.vue';
 import AdminRecycleBin from '../admins/AdminRecycleBin.vue';
 import ForgotPassword from '../views/ForgotPassword.vue'
 import AdminVoucher from '../admins/AdminVoucher.vue'
+import AdminChat from '../admins/AdminChat.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -36,6 +37,7 @@ const router = createRouter({
     { path: '/admin/members', component: AdminMember, meta: { requiresSupervisor: true }},
     { path: '/admin/dashboard', component: DashBoard, meta: { requiresAdmin: true }},
     { path: '/admin/vouchers', component: AdminVoucher, meta: { requiresAdmin: true } },
+    { path: '/admin/chats', component: AdminChat, meta: { requiresAdmin: true } },
     { path: '/register', component: Register },
     { path: '/cart', component: Cart },
     { path: '/profile', component: Profile },

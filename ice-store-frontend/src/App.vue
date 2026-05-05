@@ -5,7 +5,7 @@
   <main class="content">
     <router-view />
   </main>
-  <LiveChat />
+  <LiveChat v-if="!isAdminRoute" />
 </template>
 
 <script setup>

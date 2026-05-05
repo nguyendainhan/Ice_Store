@@ -17,7 +17,7 @@
         </div>
         <div class="chat-body" ref="chatBody">
             <div v-for="msg in messages" :key="msg.id"
-                :class="['message-wrapper', msg.sender_id === currentUserId.id ? 'my-msg' : 'admin-msg']">
+                :class="['message-wrapper', msg.sender_id === currentUserId ? 'my-msg' : 'admin-msg']">
                 <div class="message-bubble">
                     {{ msg.message }}
                 </div>
@@ -60,8 +60,15 @@ function toggleChat() {
     isOpen.value = !isOpen.value;
     if (isOpen.value) {
         unreadCount.value = 0;
-        scrollToBottom();
 
+        if (currentUserId.value) {
+            fetchChatHistory();
+            if (socket) {
+                socket.emit("join_chat", currentUserId.value);
+            }
+        }
+
+        scrollToBottom();
     }
 }
 

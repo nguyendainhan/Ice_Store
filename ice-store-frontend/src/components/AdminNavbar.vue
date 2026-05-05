@@ -31,6 +31,10 @@
                         Quản lý nhân viên
                     </router-link>
 
+                    <router-link to="/admin/chats" class="nav-link" :class="{ active: isActive('/admin/chats') }">
+                        Hộp thư hỗ trợ
+                    </router-link>
+
                     <router-link v-if="userRole === 'admin'" to="/admin/recycle-bin" class="nav-link"
                         :class="{ active: isActive('/admin/recycle-bin') }">
                         Thùng rác
