@@ -113,7 +113,25 @@
 
                 <tfoot>
                     <tr>
-                        <td colspan="3" class="text-right font-weight-bold">Tổng cộng:</td>
+                        <td colspan="3" class="text-right font-weight-bold">Tạm tính:</td>
+                        <td style="font-weight: bold;">
+                            {{ calculateSubtotal(selectedOrder.items).toLocaleString('vi-VN') }} VND
+                        </td>
+                    </tr>
+
+                    <tr v-if="calculateSubtotal(selectedOrder.items) > selectedOrder.order.total">
+                        <td colspan="3" class="text-right text-discount">
+                            Giảm giá Voucher <span v-if="selectedOrder.order.voucher_code">({{
+                                selectedOrder.order.voucher_code }})</span>:
+                        </td>
+                        <td class="text-discount">
+                            -{{ (calculateSubtotal(selectedOrder.items) -
+                                selectedOrder.order.total).toLocaleString('vi-VN') }} VND
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td colspan="3" class="text-right font-weight-bold">Tổng thanh toán:</td>
                         <td class="total-amount">
                             {{ Number(selectedOrder.order.total).toLocaleString('vi-VN') }} VND
                         </td>
@@ -246,6 +264,11 @@ const paginatedOrders = computed(() => {
     const start = (currentPage.value - 1) * itemsPerPage;
     return filteredOrders.value.slice(start, start + itemsPerPage);
 });
+
+const calculateSubtotal = (items) => {
+    if (!items) return 0;
+    return items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
+};
 
 function formatDate(dateString) {
     if (!dateString) return "N/A";
@@ -394,6 +417,11 @@ onUnmounted(() => {
     gap: 10px;
 }
 
+.text-discount {
+    color: #10b981;
+    font-weight: 600;
+}
+
 .btn {
     padding: 6px 10px;
     border: none;
@@ -504,9 +532,29 @@ onUnmounted(() => {
     min-width: 500px;
     max-width: 700px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    max-height: 75vh;
+    overflow-y: auto;
 }
 
-.modal-content h2 {
+.modal-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+    background: #f8fafc;
+    border-radius: 8px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 8px;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+s .modal-content h2 {
     margin-top: 0;
     margin-bottom: 20px;
     color: #1e293b;

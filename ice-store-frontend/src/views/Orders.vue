@@ -125,7 +125,23 @@
 
                 <tfoot>
                     <tr>
-                        <td colspan="3" class="text-right font-weight-bold">Tổng cộng:</td>
+                        <td colspan="3" class="text-right">Tạm tính:</td>
+                        <td>{{ calculateSubtotal(selectedOrder.items).toLocaleString('vi-VN') }} VND</td>
+                    </tr>
+
+                    <tr v-if="calculateSubtotal(selectedOrder.items) > selectedOrder.order.total">
+                        <td colspan="3" class="text-right text-discount">
+                            Giảm giá Voucher <span v-if="selectedOrder.order.voucher_code">({{
+                                selectedOrder.order.voucher_code }})</span>:
+                        </td>
+                        <td class="text-discount">
+                            -{{ (calculateSubtotal(selectedOrder.items) -
+                                selectedOrder.order.total).toLocaleString('vi-VN') }} VND
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td colspan="3" class="text-right font-weight-bold">Tổng thanh toán:</td>
                         <td class="total-amount">
                             {{ Number(selectedOrder.order.total).toLocaleString('vi-VN') }} VND
                         </td>
@@ -226,6 +242,12 @@ const paginatedOrders = computed(() => {
 watch([activeTab, searchKeyword, selectedMonth], () => {
     currentPage.value = 1;
 });
+
+// Hàm tính tổng tiền gốc của các sản phẩm (Chưa trừ giảm giá)
+const calculateSubtotal = (items) => {
+    if (!items) return 0;
+    return items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
+};
 
 const pendingCount = computed(() =>
     userOrders.value.filter(o => {
@@ -440,6 +462,11 @@ onUnmounted(() => {
     padding: 0 10px;
 }
 
+.text-discount {
+    color: #10b981;
+    font-weight: 600;
+}
+
 .timeline-step {
     flex: 1;
     text-align: center;
@@ -607,6 +634,26 @@ onUnmounted(() => {
     max-width: 700px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
     position: relative;
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.modal-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+    background: #f8fafc;
+    border-radius: 8px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 8px;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
 }
 
 .btn-close {
