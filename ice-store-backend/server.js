@@ -16,6 +16,7 @@ const app = express();
 const http = require("http");
 const server = http.createServer(app);
 const { Server } = require("socket.io");
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const io = new Server(server, {
     cors: {
@@ -487,6 +488,141 @@ app.post("/reset-password", async (req, res) => {
     });
 });
 
+// API STRIPE: TẠO PHIÊN THANH TOÁN 
+app.post("/create-checkout-session", verifyToken, async (req, res) => {
+    try {
+        const { items, order_id } = req.body;
+
+        const lineItems = items.map((item) => ({
+            price_data: {
+                currency: "vnd", 
+                product_data: {
+                    name: item.name, 
+                },
+                unit_amount: Math.round(Number(item.price)),
+            },
+            quantity: item.quantity,
+        }));
+
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"], 
+            line_items: lineItems,
+            mode: "payment", 
+            
+            // Nếu khách xẹt thẻ thành công, đẩy về trang này:
+            success_url: `http://localhost:5173/payment-success?order_id=${order_id}`,
+            cancel_url: `http://localhost:5173/cart?canceled=true&order_id=${order_id}`,
+        });
+
+        res.json({ url: session.url });
+
+    } catch (error) {
+        console.error("Lỗi tạo Stripe Session:", error);
+        res.status(500).json({ error: "Không thể tạo phiên thanh toán" });
+    }
+});
+
+// API: Xóa đơn hàng (Dùng khi khách hủy thanh toán Stripe)
+app.delete("/orders/:id", (req, res) => {
+    const orderId = req.params.id;
+
+    db.query("DELETE FROM order_items WHERE order_id = ?", [orderId], (err1, result1) => {
+        if (err1) {
+            console.error("🚨 Lỗi xóa order_items:", err1);
+            return res.status(500).json({ error: "Lỗi xóa chi tiết đơn" });
+        }
+
+        db.query("DELETE FROM orders WHERE id = ?", [orderId], (err2, result2) => {
+            if (err2) {
+                console.error("🚨 Lỗi xóa orders:", err2);
+                return res.status(500).json({ error: "Lỗi xóa vỏ đơn hàng" });
+            }
+
+            console.log(`🗑️ Đã hủy thành công đơn hàng #${orderId} do khách quay xe!`);
+            res.json({ message: "Đã hủy đơn hàng tạm thành công" });
+        });
+    });
+});
+
+// API: Xác nhận thanh toán Stripe thành công
+app.put("/orders/:id/paid", (req, res) => {
+    const orderId = req.params.id;
+
+    db.query("UPDATE orders SET status = 'pending' WHERE id = ?", [orderId], (err, result) => {
+        if (err) return res.status(500).json({ error: "Lỗi hệ thống" });
+
+        db.query("SELECT * FROM orders WHERE id = ?", [orderId], (err, orders) => {
+            if (err || orders.length === 0) return res.json({ message: "OK" });
+            
+            const order = orders[0]; // Lấy thông tin đơn hàng gán vào biến 'order'
+            
+            io.emit("new_order_alert", { orderId: orderId, total: order.total });
+
+            db.query("SELECT product_id, quantity FROM order_items WHERE order_id = ?", [orderId], (err, items) => {
+                if (!err) {
+                    items.forEach(item => {
+                        db.query("UPDATE products SET stock = stock - ? WHERE id = ?", [item.quantity, item.product_id]);
+                    });
+                }
+            });
+
+            db.query("UPDATE users SET total_spent = total_spent + ? WHERE id = ?", [order.total, order.user_id], (errSpent) => {
+                if (!errSpent) checkAndUpdateUserTier(order.user_id);
+            });
+
+            if (order.voucher_code) {
+                db.query("UPDATE vouchers SET used_count = used_count + 1 WHERE code = ?", [order.voucher_code]);
+            }
+
+            db.query("SELECT email, full_name, username FROM users WHERE id = ?", [order.user_id], (err, users) => {
+                if (!err && users.length > 0 && users[0].email) {
+                    const userEmail = users[0].email;
+                    const customerName = users[0].full_name || users[0].username; 
+
+                    const mailOptions = {
+                        from: `"Cửa hàng IceStore" <${process.env.EMAIL_USER}>`,
+                        to: userEmail,
+                        subject: `🎉 Xác nhận thanh toán Online Đơn #${orderId} - IceStore`,
+                        html: `
+                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                                <div style="background-color: #1e293b; padding: 20px; text-align: center;">
+                                    <h1 style="margin: 0; color: #38bdf8; font-size: 28px; letter-spacing: 1px;">IceStore</h1>
+                                </div>
+                                <div style="padding: 30px; background-color: #ffffff;">
+                                    <h2 style="color: #0f172a; margin-top: 0;">Xin chào ${customerName}!</h2>
+                                    <p style="color: #475569; font-size: 16px; line-height: 1.6;">Cảm ơn bạn đã thanh toán thành công qua thẻ. Đơn hàng của bạn đã được hệ thống ghi nhận và đang trong quá trình xử lý để giao đến bạn.</p>
+                                    
+                                    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin: 25px 0;">
+                                        <h3 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Thông tin đơn hàng #${orderId}</h3>
+                                        <p style="margin: 10px 0; color: #334155;"><strong>📍 Giao đến:</strong> ${order.delivery_address}</p>
+                                        <p style="margin: 10px 0; color: #334155;"><strong>📞 Số điện thoại:</strong> ${order.phone_number}</p>
+                                        <p style="margin: 10px 0; color: #334155;"><strong>🕒 Thời gian đặt:</strong> ${new Date(order.created_at).toLocaleString('vi-VN')}</p>
+                                        <p style="margin: 10px 0; color: #10b981;"><strong>🎟️ Mã áp dụng:</strong> ${order.voucher_code || 'Không có'}</p>
+                                        <p style="margin: 10px 0; color: #6366f1;"><strong>💳 Phương thức:</strong> Thanh toán Online (Stripe)</p>
+                                        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1;">
+                                            <p style="margin: 0; font-size: 18px; color: #1e293b;"><strong>Đã thanh toán:</strong> <span style="color: #dc2626; font-size: 22px; font-weight: bold; float: right;">${Number(order.total).toLocaleString('vi-VN')} VND</span></p>
+                                        </div>
+                                    </div>
+                                    
+                                    <p style="color: #475569; font-size: 15px;">Chúng tôi sẽ liên hệ với bạn trong thời gian sớm nhất để xác nhận thời gian giao hàng.</p>
+                                    <p style="color: #475569; font-size: 15px; margin-bottom: 0;">Trân trọng,<br><strong style="color: #1e293b;">Đội ngũ IceStore</strong></p>
+                                </div>
+                            </div>
+                        `
+                    };
+
+                    transporter.sendMail(mailOptions, (error, info) => {
+                        if (error) console.error("Lỗi gửi email Nodemailer:", error);
+                        else console.log("Đã gửi email hóa đơn thành công đến:", userEmail);
+                    });
+                }
+            });
+
+            res.json({ message: "Thanh toán Stripe hoàn tất! Đã trừ kho, cộng điểm và gửi mail." });
+        });
+    });
+});
+
 // Lấy danh sách các khách hàng đã từng nhắn tin
 app.get("/admin/chats", verifyToken, (req, res) => {
     // Lấy danh sách khách hàng, sắp xếp theo ai nhắn gần nhất thì lên đầu
@@ -585,17 +721,30 @@ app.get("/chat/:user_id", verifyToken, (req, res) => {
 
 // TẠO ĐƠN HÀNG MỚI
 app.post("/orders", verifyToken, (req, res) => {
-    const { user_id, items, total, delivery_address, phone_number, voucher_code } = req.body;
+    const { user_id, items, total, delivery_address, phone_number, voucher_code, payment_method } = req.body;
     
     const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' });
-  
+    
+    const initialStatus = (payment_method === 'STRIPE') ? 'unpaid' : 'pending';
+
     db.query(
-      "INSERT INTO orders (user_id, total, created_at, delivery_address, phone_number, voucher_code) VALUES (?,?,?,?,?,?)",
-      [user_id, total, createdAt, delivery_address, phone_number, voucher_code],
+      "INSERT INTO orders (user_id, total, created_at, delivery_address, phone_number, voucher_code, status) VALUES (?,?,?,?,?,?,?)",
+      [user_id, total, createdAt, delivery_address, phone_number, voucher_code, initialStatus],
       (err, result) => {
         if (err) return res.status(500).json({ message: "Lỗi tạo đơn hàng" });
   
         const orderId = result.insertId;
+  
+        items.forEach(item => {
+          db.query(
+            "INSERT INTO order_items (order_id, product_id, quantity) VALUES (?,?,?)",
+            [orderId, item.product_id, item.quantity]
+          );
+        });
+
+        if (payment_method === 'STRIPE') {
+            return res.json({ message: "Đã tạo đơn tạm thời cho Stripe", orderId });
+        }
   
         io.emit("new_order_alert", {
             orderId: orderId,
@@ -603,11 +752,6 @@ app.post("/orders", verifyToken, (req, res) => {
         });
   
         items.forEach(item => {
-          db.query(
-            "INSERT INTO order_items (order_id, product_id, quantity) VALUES (?,?,?)",
-            [orderId, item.product_id, item.quantity]
-          );
-          
           db.query(
             "UPDATE products SET stock = stock - ? WHERE id = ?",
             [item.quantity, item.product_id]
@@ -619,7 +763,7 @@ app.post("/orders", verifyToken, (req, res) => {
             [total, user_id],
             (errSpent) => {
                 if (errSpent) console.error("Lỗi cộng điểm tích lũy:", errSpent);
-                else checkAndUpdateUserTier(user_id); // Gọi hàm xét thăng hạng
+                else checkAndUpdateUserTier(user_id); 
             }
         );
 
@@ -683,6 +827,43 @@ app.post("/orders", verifyToken, (req, res) => {
         res.json({ message: "Order created", orderId });
       }
     );
+});
+
+// API: KHÁCH HÀNG TỰ HỦY ĐƠN HÀNG
+app.put("/orders/:id/cancel", (req, res) => {
+    const orderId = req.params.id;
+
+    db.query("SELECT * FROM orders WHERE id = ?", [orderId], (err, orders) => {
+        if (err || orders.length === 0) return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+        
+        const order = orders[0];
+
+        if (order.status !== 'pending') {
+            return res.status(400).json({ message: "Chỉ có thể hủy đơn hàng đang chờ xử lý" });
+        }
+
+        db.query("UPDATE orders SET status = 'cancelled' WHERE id = ?", [orderId], (errUpdate) => {
+            if (errUpdate) return res.status(500).json({ message: "Lỗi hệ thống khi hủy đơn" });
+
+            db.query("SELECT product_id, quantity FROM order_items WHERE order_id = ?", [orderId], (errItems, items) => {
+                if (!errItems) {
+                    items.forEach(item => {
+                        db.query("UPDATE products SET stock = stock + ? WHERE id = ?", [item.quantity, item.product_id]);
+                    });
+                }
+            });
+
+            db.query("UPDATE users SET total_spent = total_spent - ? WHERE id = ?", [order.total, order.user_id], (errSpent) => {
+                if (!errSpent) checkAndUpdateUserTier(order.user_id); // Cập nhật lại hạng nếu bị rớt hạng
+            });
+
+            if (order.voucher_code) {
+                db.query("UPDATE vouchers SET used_count = used_count - 1 WHERE code = ?", [order.voucher_code]);
+            }
+
+            res.json({ message: "Đã hủy đơn hàng thành công và hoàn trả kho!" });
+        });
+    });
 });
 
 // Thêm hoặc cập nhật sản phẩm trong giỏ hàng

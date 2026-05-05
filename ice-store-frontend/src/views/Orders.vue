@@ -38,20 +38,16 @@
                             <span class="order-date">{{ formatDate(order.created_at) }}</span>
                         </div>
 
-                        <!-- 👉 ĐÃ THÊM TIMELINE VÀO KHU VỰC NÀY -->
                         <div class="order-body">
                             <div class="order-timeline">
-                                <!-- Bước 1: Chờ giao hàng -->
                                 <div :class="['timeline-step', { active: getOrderStep(order.status) >= 1 }]">
                                     <div class="step-icon">📦</div>
                                     <p>Chờ giao</p>
                                 </div>
-                                <!-- Bước 2: Chờ xác nhận -->
                                 <div :class="['timeline-step', { active: getOrderStep(order.status) >= 2 }]">
                                     <div class="step-icon">🚚</div>
                                     <p>Tới nơi</p>
                                 </div>
-                                <!-- Bước 3: Đã nhận -->
                                 <div :class="['timeline-step', { active: getOrderStep(order.status) >= 3 }]">
                                     <div class="step-icon">✅</div>
                                     <p>Đã nhận</p>
@@ -66,6 +62,16 @@
 
                         <div class="order-footer">
                             <button @click="viewOrderDetails(order.id)" class="btn-view">Xem chi tiết</button>
+                            <!-- Chèn vào vị trí thích hợp cạnh các nút "Xem chi tiết" của bạn -->
+                            <button v-if="order.status === 'pending'" @click="cancelOrder(order.id)"
+                                class="btn-cancel-order">
+                                Hủy đơn hàng
+                            </button>
+
+                            <!-- Nếu đơn hàng đã hủy, hiển thị một cái nhãn cho khách biết -->
+                            <span v-else-if="order.status === 'cancelled'" class="badge-cancelled">
+                                Đã hủy
+                            </span>
                             <button v-if="order.status === 'awaiting_confirmation'" @click="confirmReceived(order.id)"
                                 class="btn-confirm">
                                 ✓ Xác nhận đã nhận
@@ -83,7 +89,6 @@
         </div>
     </div>
 
-    <!-- KHU VỰC MODAL CHI TIẾT ĐƠN HÀNG GIỮ NGUYÊN -->
     <div v-if="selectedOrder" class="modal-overlay" @click="selectedOrder = null">
         <div class="modal-content" @click.stop>
             <button class="btn-close" @click="selectedOrder = null">✕</button>
@@ -315,6 +320,25 @@ async function confirmReceived(orderId) {
     }
 }
 
+// Hàm xử lý khi khách bấm Hủy đơn
+const cancelOrder = async (orderId) => {
+    const isConfirm = window.confirm("Bạn có chắc chắn muốn hủy đơn hàng #" + orderId + " không?");
+    if (!isConfirm) return;
+
+    try {
+        const response = await axios.put(`${import.meta.env.VITE_API_URL}/orders/${orderId}/cancel`, {}, {
+            headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } // Kẹp token vào nếu cần
+        });
+
+        toast.success(response.data.message || "Hủy đơn hàng thành công!");
+
+        fetchUserOrders();
+
+    } catch (error) {
+        console.error("Lỗi khi hủy đơn:", error);
+        toast.error(error.response?.data?.message || "Lỗi khi hủy đơn hàng");
+    }
+};
 onMounted(() => {
     fetchUserOrders();
     socket = io(import.meta.env.VITE_API_URL);
@@ -577,6 +601,30 @@ onUnmounted(() => {
 
 .btn-confirm:hover {
     background-color: #059669;
+}
+
+.btn-cancel-order {
+    padding: 6px 12px;
+    background-color: #ef4444;
+    /* Màu đỏ */
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.btn-cancel-order:hover {
+    background-color: #dc2626;
+}
+
+.badge-cancelled {
+    padding: 4px 8px;
+    background-color: #f1f5f9;
+    color: #64748b;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 14px;
 }
 
 /* Phân trang */

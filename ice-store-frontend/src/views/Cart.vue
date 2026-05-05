@@ -1,10 +1,11 @@
 <script setup>
 import { ref, onMounted, computed } from "vue";
 import axios from "axios";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { toast } from "vue3-toastify";
 
 const router = useRouter();
+const route = useRoute();
 const cartItems = ref([]);
 const userId = localStorage.getItem("user_id");
 const loading = ref(false);
@@ -157,7 +158,7 @@ function removeVoucher() {
 }
 
 // Thanh toán
-async function checkout() {
+async function checkout(paymentMethod = 'COD') {
     if (cartItems.value.length === 0) {
         toast.warning("Giỏ hàng của bạn đang trống!");
         return;
@@ -173,19 +174,24 @@ async function checkout() {
 
     const items = cartItems.value.map(item => ({
         product_id: item.product_id,
-        quantity: item.quantity
+        quantity: item.quantity,
+        name: item.name,
+        price: item.price
     }));
 
     try {
-        // Gửi đúng số tiền ĐÃ GIẢM và MÃ VOUCHER lên server
+        // 1. TẠO ĐƠN HÀNG LƯU VÀO DATABASE
         const res = await axios.post(`${import.meta.env.VITE_API_URL}/orders`, {
             user_id: userId,
             items: items,
-            total: finalTotal.value, // Dùng tổng tiền đã trừ khuyến mãi
-            voucher_code: appliedVoucher.value, // Báo cho server biết khách xài mã nào
+            total: finalTotal.value,
+            voucher_code: appliedVoucher.value,
             delivery_address: deliveryAddress.value,
-            phone_number: phoneNumber.value
+            phone_number: phoneNumber.value,
+            payment_method: paymentMethod
         });
+
+        const newOrderId = res.data.orderId;
 
         if (saveAsDefault.value) {
             await axios.put(`${import.meta.env.VITE_API_URL}/profile`, {
@@ -198,27 +204,54 @@ async function checkout() {
             });
         }
 
-        toast.success("Thanh toán thành công! Đơn hàng #" + res.data.orderId);
+        if (paymentMethod === 'STRIPE') {
+            const stripeRes = await axios.post(`${import.meta.env.VITE_API_URL}/create-checkout-session`, {
+                order_id: newOrderId,
+                items: items
+            }, {
+                headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+            });
+
+            if (stripeRes.data.url) {
+                window.location.href = stripeRes.data.url;
+            }
+            return; // Dừng chạy code bên dưới
+        }
+
+        toast.success("Thanh toán thành công! Đơn hàng #" + newOrderId);
 
         for (const item of cartItems.value) {
             await axios.delete(`${import.meta.env.VITE_API_URL}/cart/${item.id}`);
         }
 
-        // Trả lại trạng thái giỏ hàng như mới
         discountAmount.value = 0;
         appliedVoucher.value = null;
         voucherCode.value = "";
-
         fetchCart();
+        router.push("/orders");
     } catch (err) {
         console.error("Lỗi thanh toán:", err);
-        toast.error("Thanh toán thất bại: " + err.message);
+        toast.error("Thanh toán thất bại: " + (err.response?.data?.message || err.message));
     }
 }
 
-onMounted(() => {
+onMounted(async () => {
     fetchCart();
     fetchUserProfile();
+
+    if (route.query.canceled === 'true' && route.query.order_id) {
+        toast.info("Bạn đã hủy quá trình thanh toán Online.");
+
+        try {
+            // Gọi API xóa cái hóa đơn lỡ in đi
+            await axios.delete(`${import.meta.env.VITE_API_URL}/orders/${route.query.order_id}`);
+
+            // Dọn sạch đường link URL (Xóa cái chữ ?canceled... đi cho đẹp)
+            router.replace('/cart');
+        } catch (error) {
+            console.error("Lỗi khi hủy đơn tạm:", error);
+        }
+    }
 });
 </script>
 
@@ -320,7 +353,14 @@ onMounted(() => {
                         </h3>
                     </div>
 
-                    <button @click="checkout" class="btn-checkout">Thanh toán</button>
+                    <div class="checkout-actions">
+                        <button @click="checkout('COD')" class="btn-checkout cod">
+                            Thanh toán Tiền mặt (COD)
+                        </button>
+                        <button @click="checkout('STRIPE')" class="btn-checkout stripe">
+                            💳 Thanh toán Online (Visa/Mastercard)
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -826,10 +866,16 @@ onMounted(() => {
     font-weight: bold;
 }
 
-/* Checkout button */
+/* --- BUTTON THANH TOÁN --- */
+.checkout-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 20px;
+}
+
 .btn-checkout {
-    padding: 12px 30px;
-    background-color: #10b981;
+    padding: 14px 20px;
     color: white;
     border: none;
     border-radius: 6px;
@@ -837,16 +883,27 @@ onMounted(() => {
     font-size: 16px;
     font-weight: bold;
     transition: all 0.3s ease;
+    width: 100%;
 }
 
-.btn-checkout:hover {
+.btn-checkout.cod {
+    background-color: #10b981;
+}
+
+.btn-checkout.cod:hover {
     background-color: #059669;
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
 
-.btn-checkout:active {
-    transform: translateY(0);
+.btn-checkout.stripe {
+    background-color: #6366f1;
+}
+
+.btn-checkout.stripe:hover {
+    background-color: #4f46e5;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
 /* Number input arrows removal */

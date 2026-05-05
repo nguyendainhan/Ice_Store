@@ -19,6 +19,7 @@ import AdminRecycleBin from '../admins/AdminRecycleBin.vue';
 import ForgotPassword from '../views/ForgotPassword.vue'
 import AdminVoucher from '../admins/AdminVoucher.vue'
 import AdminChat from '../admins/AdminChat.vue'
+import PaymentSuccess from '../views/PaymentSuccess.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -42,7 +43,8 @@ const router = createRouter({
     { path: '/cart', component: Cart },
     { path: '/profile', component: Profile },
     { path: '/change-password', component: ChangePassword },
-    { path: '/forgot-password', component: ForgotPassword }
+    { path: '/forgot-password', component: ForgotPassword },
+    { path: '/payment-success', component: PaymentSuccess }
   ]
 })
 
