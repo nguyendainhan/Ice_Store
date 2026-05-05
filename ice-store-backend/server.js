@@ -26,6 +26,40 @@ const io = new Server(server, {
 
 io.on("connection", (socket) => {
     console.log("⚡ Có thiết bị vừa kết nối Socket: " + socket.id);
+    
+    socket.on("join_chat", (userId) => {
+        const roomName = `chat_room_${userId}`;
+        socket.join(roomName);
+        console.log(`Socket ${socket.id} đã tham gia phòng: ${roomName}`);
+    });
+
+    socket.on("send_message", (data) => {
+        const { user_id, sender_id, message } = data;
+        const now = new Date();
+        
+        db.query(
+            "INSERT INTO chat_messages (user_id, sender_id, message, created_at) VALUES (?, ?, ?, ?)",
+            [user_id, sender_id, message, now],
+            (err, result) => {
+                if (err) return console.error("Lỗi lưu tin nhắn vào DB:", err);
+                
+                const newMessage = {
+                    id: result.insertId,
+                    user_id,
+                    sender_id,
+                    message,
+                    created_at: now.toISOString()
+                };
+                io.to(`chat_room_${user_id}`).emit("receive_message", newMessage);                
+                io.emit("admin_new_message_alert", { user_id, message });
+            }
+        );
+    });
+
+    // Code cũ của bạn (nếu có) có thể nằm dưới này...
+    socket.on("disconnect", () => {
+        console.log("NGƯỜI DÙNG ĐÃ NGẮT KẾT NỐI:", socket.id);
+    });
 });
 
 // HÀM GÁC CỔNG (MIDDLEWARE) BẢO VỆ API
@@ -453,6 +487,26 @@ app.post("/reset-password", async (req, res) => {
     });
 });
 
+// Lấy danh sách các khách hàng đã từng nhắn tin
+app.get("/admin/chats", verifyToken, (req, res) => {
+    // Lấy danh sách khách hàng, sắp xếp theo ai nhắn gần nhất thì lên đầu
+    const query = `
+        SELECT u.id, u.full_name, u.username, u.avatar, MAX(c.created_at) as last_msg_time
+        FROM chat_messages c
+        JOIN users u ON c.user_id = u.id
+        GROUP BY u.id
+        ORDER BY last_msg_time DESC
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Lỗi lấy danh sách chat cho admin:", err);
+            return res.status(500).json({ message: "Lỗi hệ thống" });
+        }
+        res.json(results);
+    });
+});
+
 // API Cập nhật ảnh đại diện
 app.put("/profile/avatar", verifyToken, upload.single("avatar"), (req, res) => {
     const user_id = req.user.id; // Lấy ID người dùng từ token
@@ -509,6 +563,25 @@ function checkAndUpdateUserTier(userId) {
         }
     });
 }
+
+// Api lấy lịch sử chat
+app.get("/chat/:user_id", verifyToken, (req, res) => {
+    const userId = req.params.user_id;
+    
+    const query = `
+        SELECT * FROM chat_messages 
+        WHERE user_id = ? 
+        ORDER BY created_at ASC
+    `; // ASC để tin nhắn cũ ở trên, mới ở dưới
+
+    db.query(query, [userId], (err, results) => {
+        if (err) {
+            console.error("Lỗi lấy lịch sử chat:", err);
+            return res.status(500).json({ message: "Lỗi hệ thống" });
+        }
+        res.json(results);
+    });
+});
 
 // TẠO ĐƠN HÀNG MỚI
 app.post("/orders", verifyToken, (req, res) => {

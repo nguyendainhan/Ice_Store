@@ -5,6 +5,7 @@
   <main class="content">
     <router-view />
   </main>
+  <LiveChat />
 </template>
 
 <script setup>
@@ -16,6 +17,7 @@ import AdminNavbar from "./components/AdminNavbar.vue";
 import { username as userNameState } from "./stores/user.js";
 import { toast } from "vue3-toastify";
 import { io } from "socket.io-client";
+import LiveChat from "./views/LiveChat.vue";
 
 const route = useRoute();
 
