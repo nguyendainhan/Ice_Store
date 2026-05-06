@@ -1,0 +1,12 @@
+{
+  "nav": {
+    "home": "首頁",
+    "shop": "商店",
+    "cart": "購物車"
+  },
+  "product": {
+    "add_to_cart": "加入購物車",
+    "price": "價格",
+    "out_of_stock": "缺貨"
+  }
+}

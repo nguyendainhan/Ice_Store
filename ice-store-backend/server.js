@@ -8,9 +8,14 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
+const aiRoutes = require('./ai');
 const serverUrl = process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
 
 const app = express();
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb' }));
 
 // === CẤU HÌNH SOCKET.IO (MỚI THÊM) ===
 const http = require("http");
@@ -24,6 +29,8 @@ const io = new Server(server, {
         methods: ["GET", "POST", "PUT", "DELETE"]
     }
 });
+
+app.use('/api', aiRoutes);
 
 io.on("connection", (socket) => {
     console.log("⚡ Có thiết bị vừa kết nối Socket: " + socket.id);
@@ -99,10 +106,6 @@ const verifyToken = (req, res, next) => {
         }
     });
 };
-
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb' }));
 
 // Cấu hình upload ảnh
 const cloudinary = require('cloudinary').v2;

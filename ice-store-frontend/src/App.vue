@@ -6,6 +6,7 @@
     <router-view />
   </main>
   <LiveChat v-if="!isAdminRoute" />
+  <Chatbot v-if="!isAdminRoute" />
 </template>
 
 <script setup>
@@ -18,6 +19,7 @@ import { username as userNameState } from "./stores/user.js";
 import { toast } from "vue3-toastify";
 import { io } from "socket.io-client";
 import LiveChat from "./views/LiveChat.vue";
+import Chatbot from "./views/ChatBot.vue";
 
 const route = useRoute();
 

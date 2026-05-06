@@ -39,7 +39,7 @@
                     </div>
                     <h3 class="product-name">{{ p.name }}</h3>
                     <p class="product-desc">{{ p.description }}</p>
-                    <p class="product-price">{{ p.price.toLocaleString('vi-VN') }} VND</p>
+                    <p class="product-price">{{ Number(p.price).toLocaleString('vi-VN') }} VND</p>
 
                     <button class="btn-add-cart" @click="addToCart(p)">Thêm vào giỏ</button>
                 </div>

@@ -1,0 +1,12 @@
+{
+  "nav": {
+    "home": "Trang chủ",
+    "shop": "Cửa hàng",
+    "cart": "Giỏ hàng"
+  },
+  "product": {
+    "add_to_cart": "Thêm vào giỏ",
+    "price": "Giá",
+    "out_of_stock": "Hết hàng"
+  }
+}
