@@ -141,11 +141,18 @@ onMounted(() => {
 
     socket = io(import.meta.env.VITE_API_URL);
 
-    socket.on("receive_message", (newMsg) => {
+    socket.on("receive_message", async (newMsg) => {
         if (newMsg.user_id === activeUserId.value) {
             messages.value.push(newMsg);
             scrollToBottom();
-        } else {
+
+            await axios.put(`${import.meta.env.VITE_API_URL}/chats/mark-read/${activeUserId.value}`, {}, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+
+            window.dispatchEvent(new Event('update-unread-navbar'));
+        }
+        else {
             fetchChatUsers();
         }
     });

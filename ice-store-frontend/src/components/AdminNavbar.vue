@@ -133,10 +133,8 @@ onMounted(() => {
             checkOverdueOrders();
         });
 
-        socket.on("receive_message", (data) => {
-            if (route.path !== '/admin/chats') {
-                unreadMessageCount.value++;
-            }
+        socket.on("receive_message", () => {
+            checkUnreadMessages();
         });
     }
     window.addEventListener('update-unread-navbar', checkUnreadMessages);
