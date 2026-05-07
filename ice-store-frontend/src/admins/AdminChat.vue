@@ -9,8 +9,10 @@
                     @click="selectUser(user.id, user.full_name || user.username)">
                     <div class="avatar">👨‍ms</div>
                     <div class="user-info">
-                        <div class="name">{{ user.full_name || user.username }}</div>
-                        <!-- Cắt bớt thời gian cho gọn -->
+                        <div class="name-row">
+                            <span class="name">{{ user.full_name || user.username }}</span>
+                            <span v-if="user.unread_count > 0" class="mini-badge">{{ user.unread_count }}</span>
+                        </div>
                         <div class="time">Hoạt động: {{ formatTime(user.last_msg_time) }}</div>
                     </div>
                 </div>
@@ -66,7 +68,7 @@ const chatBody = ref(null);
 const adminId = Number(localStorage.getItem('user_id'));
 let socket = null;
 
-// 1. Lấy danh sách khách hàng
+// Lấy danh sách khách hàng
 const fetchChatUsers = async () => {
     try {
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/admin/chats`, {
@@ -78,12 +80,11 @@ const fetchChatUsers = async () => {
     }
 };
 
-// 2. Khi Admin bấm chọn 1 khách hàng
+// Khi Admin bấm chọn 1 khách hàng
 const selectUser = async (userId, userName) => {
     activeUserId.value = userId;
     activeUserName.value = userName;
 
-    // Tải lịch sử chat của khách đó
     try {
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/chat/${userId}`, {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
@@ -91,22 +92,34 @@ const selectUser = async (userId, userName) => {
         messages.value = res.data;
         scrollToBottom();
 
-        // CỰC KỲ QUAN TRỌNG: Admin phải "chui" vào đúng phòng chat của khách đó để rep
         if (socket) {
             socket.emit("join_chat", userId);
         }
+
+        await axios.put(`${import.meta.env.VITE_API_URL}/chats/mark-read/${userId}`, {}, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+
+        const userIndex = chatUsers.value.findIndex(u => u.id === userId);
+        if (userIndex !== -1) {
+            chatUsers.value[userIndex].unread_count = 0;
+        }
+
+        //Phát tín hiệu cho AdminNavbar biết để TÍNH LẠI tổng số chấm đỏ
+        window.dispatchEvent(new Event('update-unread-navbar'));
+
     } catch (err) {
-        console.error("Lỗi tải tin nhắn:", err);
+        console.error("Lỗi khi tải hoặc xử lý tin nhắn:", err);
     }
 };
 
-// 3. Gửi tin nhắn (Với tư cách Admin)
+// Gửi tin nhắn (Với tư cách Admin)
 const sendMessage = () => {
     if (!newMessage.value.trim() || !activeUserId.value || !socket) return;
 
     socket.emit("send_message", {
-        user_id: activeUserId.value, // Gửi vào phòng của Khách
-        sender_id: adminId,          // Người gửi là Admin
+        user_id: activeUserId.value,
+        sender_id: adminId,
         message: newMessage.value
     });
 
@@ -128,14 +141,11 @@ onMounted(() => {
 
     socket = io(import.meta.env.VITE_API_URL);
 
-    // Lắng nghe tin nhắn mới để hiển thị realtime
     socket.on("receive_message", (newMsg) => {
-        // Nếu tin nhắn thuộc về người Admin đang mở chat thì mới push vào màn hình
         if (newMsg.user_id === activeUserId.value) {
             messages.value.push(newMsg);
             scrollToBottom();
         } else {
-            // Nếu có khách khác nhắn, tải lại danh sách bên trái để nó nhảy lên đầu
             fetchChatUsers();
         }
     });
@@ -150,7 +160,6 @@ onUnmounted(() => {
 .admin-chat-container {
     display: flex;
     height: 70vh;
-    /* Tùy chỉnh độ cao */
     background: white;
     border-radius: 12px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
@@ -290,6 +299,21 @@ onUnmounted(() => {
     font-size: 11px;
     color: #94a3b8;
     margin-top: 4px;
+}
+
+.name-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mini-badge {
+    background-color: #ef4444;
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 10px;
 }
 
 .chat-footer {

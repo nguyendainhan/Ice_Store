@@ -31,8 +31,10 @@
                         Quản lý nhân viên
                     </router-link>
 
-                    <router-link to="/admin/chats" class="nav-link" :class="{ active: isActive('/admin/chats') }">
+                    <router-link to="/admin/chats" class="nav-link nav-link-chat"
+                        :class="{ active: isActive('/admin/chats') }">
                         Hộp thư hỗ trợ
+                        <span v-if="unreadMessageCount > 0" class="chat-badge">{{ unreadMessageCount }}</span>
                     </router-link>
 
                     <router-link v-if="userRole === 'admin'" to="/admin/recycle-bin" class="nav-link"
@@ -57,7 +59,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import axios from "axios";
 import { username as userNameState, role as roleState } from "../stores/user.js";
@@ -70,30 +72,19 @@ const isSupervisor = ref(false);
 const userRole = ref(localStorage.getItem("role") || "");
 
 const overdueCount = ref(0);
+const unreadMessageCount = ref(0);
 let pollingInterval = null;
 
-onMounted(() => {
-    username.value = localStorage.getItem("username") || "Admin";
-    isSupervisor.value = localStorage.getItem("is_supervisor") === "1";
-    userRole.value = localStorage.getItem("role") || "";
-
-    checkOverdueOrders();
-    pollingInterval = setInterval(checkOverdueOrders, 60000);
-
-    if (userRole.value === 'admin' || userRole.value === 'staff') {
-        const socket = io(import.meta.env.VITE_API_URL);
-
-        // Khi nghe thấy Backend hô lên "order_status_updated", lập tức đi đếm lại chuông!
-        socket.on("order_status_updated", () => {
-            console.log("🔄 Đã bắt được tín hiệu trạng thái đơn hàng thay đổi, đang tính lại chuông...");
-            checkOverdueOrders();
-        });
+async function checkUnreadMessages() {
+    try {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL}/chats/unread-count`);
+        if (res.data && res.data.count) {
+            unreadMessageCount.value = res.data.count;
+        }
+    } catch (error) {
+        console.error("Lỗi lấy thông báo tin nhắn chưa đọc:", error);
     }
-});
-
-onUnmounted(() => {
-    if (pollingInterval) clearInterval(pollingInterval);
-});
+}
 
 async function checkOverdueOrders() {
     try {
@@ -124,6 +115,37 @@ function logout() {
 
     router.push("/login");
 }
+
+onMounted(() => {
+    username.value = localStorage.getItem("username") || "Admin";
+    isSupervisor.value = localStorage.getItem("is_supervisor") === "1";
+    userRole.value = localStorage.getItem("role") || "";
+
+    checkOverdueOrders();
+    checkUnreadMessages();
+    pollingInterval = setInterval(checkOverdueOrders, 60000);
+
+    if (userRole.value === 'admin' || userRole.value === 'staff') {
+        const socket = io(import.meta.env.VITE_API_URL);
+
+        socket.on("order_status_updated", () => {
+            console.log("🔄 Đã bắt được tín hiệu trạng thái đơn hàng thay đổi...");
+            checkOverdueOrders();
+        });
+
+        socket.on("receive_message", (data) => {
+            if (route.path !== '/admin/chats') {
+                unreadMessageCount.value++;
+            }
+        });
+    }
+    window.addEventListener('update-unread-navbar', checkUnreadMessages);
+});
+
+onUnmounted(() => {
+    if (pollingInterval) clearInterval(pollingInterval);
+    window.removeEventListener('update-unread-navbar', checkUnreadMessages);
+});
 </script>
 
 <style scoped>
@@ -198,6 +220,38 @@ function logout() {
     font-weight: bold;
 }
 
+.nav-link-chat {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.chat-badge {
+    background-color: #ef4444;
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: 6px;
+    box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);
+    animation: popIn 0.3s ease-out;
+}
+
+@keyframes popIn {
+    0% {
+        transform: scale(0);
+    }
+
+    80% {
+        transform: scale(1.2);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
 /* Admin Section */
 .admin-section {
     display: flex;
@@ -225,7 +279,6 @@ function logout() {
     background-color: #b91c1c;
 }
 
-/* 👉 CSS CHO QUẢ CHUÔNG CẢNH BÁO */
 .notification-bell {
     position: relative;
     cursor: pointer;

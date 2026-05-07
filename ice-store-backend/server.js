@@ -630,7 +630,8 @@ app.put("/orders/:id/paid", (req, res) => {
 app.get("/admin/chats", verifyToken, (req, res) => {
     // Lấy danh sách khách hàng, sắp xếp theo ai nhắn gần nhất thì lên đầu
     const query = `
-        SELECT u.id, u.full_name, u.username, u.avatar, MAX(c.created_at) as last_msg_time
+        SELECT u.id, u.full_name, u.username, u.avatar, MAX(c.created_at) as last_msg_time,
+               SUM(CASE WHEN c.is_read = 0 AND c.sender_id = u.id THEN 1 ELSE 0 END) as unread_count
         FROM chat_messages c
         JOIN users u ON c.user_id = u.id
         GROUP BY u.id
@@ -644,6 +645,54 @@ app.get("/admin/chats", verifyToken, (req, res) => {
         }
         res.json(results);
     });
+});
+
+app.get("/chats/unread-count", async (req, res) => {
+    try {
+        const sql = `
+            SELECT COUNT(*) AS count 
+            FROM chat_messages 
+            WHERE is_read = 0 AND sender_id = user_id
+        `;
+
+        db.query(sql, (err, result) => {
+            if (err) {
+                console.error("Lỗi đếm tin nhắn:", err);
+                return res.status(500).json({ message: "Lỗi câu lệnh SQL" });
+            }
+            
+            res.json({ count: result[0].count });
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Lỗi server" });
+    }
+});
+
+app.put("/chats/mark-read/:userId", async (req, res) => {
+    try {
+        const userId = req.params.userId;
+
+        const sql = `
+            UPDATE chat_messages 
+            SET is_read = 1 
+            WHERE user_id = ? AND sender_id = ? AND is_read = 0
+        `;
+
+        db.query(sql, [userId, userId], (err, result) => {
+            if (err) {
+                console.error("Lỗi cập nhật trạng thái đã đọc:", err);
+                return res.status(500).json({ message: "Lỗi câu lệnh SQL" });
+            }
+            
+            res.json({ message: "Đã cập nhật trạng thái", updatedRows: result.affectedRows });
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Lỗi server" });
+    }
 });
 
 // API Cập nhật ảnh đại diện
