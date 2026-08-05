@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require("express");
 const mysql = require("mysql2");
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require("cors");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
@@ -14,6 +15,113 @@ const serverUrl = process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
 const app = express();
 
 app.use(cors());
+
+app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    let event;
+
+    try {
+        event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+    } catch (err) {
+        console.error('⚠️ Lỗi xác minh chữ ký Stripe Webhook:', err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    if (event.type === 'checkout.session.completed') {
+        const session = event.data.object;
+        
+        // Lấy lại order_id từ metadata
+        const orderId = session.metadata.order_id; 
+        console.log(`✅ Webhook báo về: Đơn hàng #${orderId} đã thanh toán thành công!`);
+        
+        // --- BẮT ĐẦU LUỒNG XỬ LÝ (Thay thế cho /orders/:id/paid) ---
+        
+        db.query("UPDATE orders SET status = 'pending' WHERE id = ?", [orderId], (err, result) => {
+            if (err) {
+                console.error("🚨 Lỗi cập nhật trạng thái đơn hàng:", err);
+                return; // Không dùng res để trả lỗi vì phải luôn trả 200 cho Stripe
+            }
+
+            db.query("SELECT * FROM orders WHERE id = ?", [orderId], (err, orders) => {
+                if (err || orders.length === 0) return;
+                
+                const order = orders[0]; 
+                
+                // 1. Thông báo Socket cho Admin
+                io.emit("new_order_alert", { orderId: orderId, total: order.total });
+
+                // 2. Trừ tồn kho sản phẩm
+                db.query("SELECT product_id, quantity FROM order_items WHERE order_id = ?", [orderId], (err, items) => {
+                    if (!err) {
+                        items.forEach(item => {
+                            db.query("UPDATE products SET stock = stock - ? WHERE id = ?", [item.quantity, item.product_id]);
+                        });
+                    }
+                });
+
+                // 3. Cộng điểm chi tiêu & Cập nhật hạng VIP
+                db.query("UPDATE users SET total_spent = total_spent + ? WHERE id = ?", [order.total, order.user_id], (errSpent) => {
+                    if (!errSpent) checkAndUpdateUserTier(order.user_id);
+                });
+
+                // 4. Cộng dồn lượt sử dụng Voucher (nếu có)
+                if (order.voucher_code) {
+                    db.query("UPDATE vouchers SET used_count = used_count + 1 WHERE code = ?", [order.voucher_code]);
+                }
+
+                // 5. Gửi Email thông báo thành công cho khách hàng
+                db.query("SELECT email, full_name, username FROM users WHERE id = ?", [order.user_id], (err, users) => {
+                    if (!err && users.length > 0 && users[0].email) {
+                        const userEmail = users[0].email;
+                        const customerName = users[0].full_name || users[0].username; 
+
+                        const mailOptions = {
+                            from: `"Cửa hàng IceStore" <${process.env.EMAIL_USER}>`,
+                            to: userEmail,
+                            subject: `🎉 Xác nhận thanh toán Online Đơn #${orderId} - IceStore`,
+                            html: `
+                                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                                    <div style="background-color: #1e293b; padding: 20px; text-align: center;">
+                                        <h1 style="margin: 0; color: #38bdf8; font-size: 28px; letter-spacing: 1px;">IceStore</h1>
+                                    </div>
+                                    <div style="padding: 30px; background-color: #ffffff;">
+                                        <h2 style="color: #0f172a; margin-top: 0;">Xin chào ${customerName}!</h2>
+                                        <p style="color: #475569; font-size: 16px; line-height: 1.6;">Cảm ơn bạn đã thanh toán thành công qua thẻ. Đơn hàng của bạn đã được hệ thống ghi nhận và đang trong quá trình xử lý để giao đến bạn.</p>
+                                        
+                                        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin: 25px 0;">
+                                            <h3 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Thông tin đơn hàng #${orderId}</h3>
+                                            <p style="margin: 10px 0; color: #334155;"><strong>📍 Giao đến:</strong> ${order.delivery_address}</p>
+                                            <p style="margin: 10px 0; color: #334155;"><strong>📞 Số điện thoại:</strong> ${order.phone_number}</p>
+                                            <p style="margin: 10px 0; color: #334155;"><strong>🕒 Thời gian đặt:</strong> ${new Date(order.created_at).toLocaleString('vi-VN')}</p>
+                                            <p style="margin: 10px 0; color: #10b981;"><strong>🎟️ Mã áp dụng:</strong> ${order.voucher_code || 'Không có'}</p>
+                                            <p style="margin: 10px 0; color: #6366f1;"><strong>💳 Phương thức:</strong> Thanh toán Online (Stripe)</p>
+                                            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1;">
+                                                <p style="margin: 0; font-size: 18px; color: #1e293b;"><strong>Đã thanh toán:</strong> <span style="color: #dc2626; font-size: 22px; font-weight: bold; float: right;">${Number(order.total).toLocaleString('vi-VN')} VND</span></p>
+                                            </div>
+                                        </div>
+                                        
+                                        <p style="color: #475569; font-size: 15px;">Chúng tôi sẽ liên hệ với bạn trong thời gian sớm nhất để xác nhận thời gian giao hàng.</p>
+                                        <p style="color: #475569; font-size: 15px; margin-bottom: 0;">Trân trọng,<br><strong style="color: #1e293b;">Đội ngũ IceStore</strong></p>
+                                    </div>
+                                </div>
+                            `
+                        };
+
+                        transporter.sendMail(mailOptions, (error, info) => {
+                            if (error) console.error("Lỗi gửi email Nodemailer:", error);
+                            else console.log("Đã gửi email hóa đơn thành công đến:", userEmail);
+                        });
+                    }
+                });
+            });
+        });
+    }
+
+    res.status(200).json({ received: true });
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb' }));
 
@@ -21,7 +129,6 @@ app.use(express.urlencoded({ limit: '50mb' }));
 const http = require("http");
 const server = http.createServer(app);
 const { Server } = require("socket.io");
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const io = new Server(server, {
     cors: {
@@ -81,7 +188,7 @@ const verifyToken = (req, res, next) => {
     }
 
     // 2. Kiểm tra xem Token có đúng là do hệ thống mình tạo ra không
-    jwt.verify(token, "SECRET_KEY", (err, decoded) => {
+    jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
         if (err) return res.status(401).json({ message: "Phiên đăng nhập đã hết hạn!" });
         
         req.user = decoded; // Lưu lại thông tin user (id, role) để dùng cho các API sau
@@ -105,6 +212,24 @@ const verifyToken = (req, res, next) => {
             next();
         }
     });
+};
+
+const verifyAdmin = (req, res, next) => {
+    // req.user đã được giải mã từ hàm verifyToken chạy trước đó
+    if (req.user && req.user.role === 'admin') {
+        next(); // Khớp role Admin -> Cho phép đi tiếp
+    } else {
+        return res.status(403).json({ message: "Cảnh báo: Bạn không có quyền quản trị trị hệ thống!" });
+    }
+};
+
+// HÀM GÁC CỔNG DÀNH CHO CẢ ADMIN VÀ NHÂN VIÊN (STAFF)
+const verifyStaffOrAdmin = (req, res, next) => {
+    if (req.user && (req.user.role === 'admin' || req.user.role === 'staff')) {
+        next();
+    } else {
+        return res.status(403).json({ message: "Cảnh báo: Chỉ nhân viên nội bộ mới được truy cập!" });
+    }
 };
 
 // Cấu hình upload ảnh
@@ -425,7 +550,7 @@ app.post("/login", (req, res) => {
     if (!match) return res.status(400).json({ message: "Wrong password" });
 
     // Tạo token mới cho lần đăng nhập này
-    const token = jwt.sign({ id: user.id, role: user.role }, "SECRET_KEY");
+    const token = jwt.sign({ id: user.id, role: user.role }, process.env.SECRET_KEY);
 
     const responseData = { 
       token, 
@@ -511,7 +636,9 @@ app.post("/create-checkout-session", verifyToken, async (req, res) => {
             payment_method_types: ["card"], 
             line_items: lineItems,
             mode: "payment", 
-            
+            metadata: {
+                order_id: order_id // Gửi order_id để Stripe trả lại qua Webhook
+            },
             // Nếu khách xẹt thẻ thành công, đẩy về trang này:
             success_url: `http://localhost:5173/payment-success?order_id=${order_id}`,
             cancel_url: `http://localhost:5173/cart?canceled=true&order_id=${order_id}`,
@@ -547,87 +674,8 @@ app.delete("/orders/:id", (req, res) => {
     });
 });
 
-// API: Xác nhận thanh toán Stripe thành công
-app.put("/orders/:id/paid", (req, res) => {
-    const orderId = req.params.id;
-
-    db.query("UPDATE orders SET status = 'pending' WHERE id = ?", [orderId], (err, result) => {
-        if (err) return res.status(500).json({ error: "Lỗi hệ thống" });
-
-        db.query("SELECT * FROM orders WHERE id = ?", [orderId], (err, orders) => {
-            if (err || orders.length === 0) return res.json({ message: "OK" });
-            
-            const order = orders[0]; // Lấy thông tin đơn hàng gán vào biến 'order'
-            
-            io.emit("new_order_alert", { orderId: orderId, total: order.total });
-
-            db.query("SELECT product_id, quantity FROM order_items WHERE order_id = ?", [orderId], (err, items) => {
-                if (!err) {
-                    items.forEach(item => {
-                        db.query("UPDATE products SET stock = stock - ? WHERE id = ?", [item.quantity, item.product_id]);
-                    });
-                }
-            });
-
-            db.query("UPDATE users SET total_spent = total_spent + ? WHERE id = ?", [order.total, order.user_id], (errSpent) => {
-                if (!errSpent) checkAndUpdateUserTier(order.user_id);
-            });
-
-            if (order.voucher_code) {
-                db.query("UPDATE vouchers SET used_count = used_count + 1 WHERE code = ?", [order.voucher_code]);
-            }
-
-            db.query("SELECT email, full_name, username FROM users WHERE id = ?", [order.user_id], (err, users) => {
-                if (!err && users.length > 0 && users[0].email) {
-                    const userEmail = users[0].email;
-                    const customerName = users[0].full_name || users[0].username; 
-
-                    const mailOptions = {
-                        from: `"Cửa hàng IceStore" <${process.env.EMAIL_USER}>`,
-                        to: userEmail,
-                        subject: `🎉 Xác nhận thanh toán Online Đơn #${orderId} - IceStore`,
-                        html: `
-                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                                <div style="background-color: #1e293b; padding: 20px; text-align: center;">
-                                    <h1 style="margin: 0; color: #38bdf8; font-size: 28px; letter-spacing: 1px;">IceStore</h1>
-                                </div>
-                                <div style="padding: 30px; background-color: #ffffff;">
-                                    <h2 style="color: #0f172a; margin-top: 0;">Xin chào ${customerName}!</h2>
-                                    <p style="color: #475569; font-size: 16px; line-height: 1.6;">Cảm ơn bạn đã thanh toán thành công qua thẻ. Đơn hàng của bạn đã được hệ thống ghi nhận và đang trong quá trình xử lý để giao đến bạn.</p>
-                                    
-                                    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                                        <h3 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Thông tin đơn hàng #${orderId}</h3>
-                                        <p style="margin: 10px 0; color: #334155;"><strong>📍 Giao đến:</strong> ${order.delivery_address}</p>
-                                        <p style="margin: 10px 0; color: #334155;"><strong>📞 Số điện thoại:</strong> ${order.phone_number}</p>
-                                        <p style="margin: 10px 0; color: #334155;"><strong>🕒 Thời gian đặt:</strong> ${new Date(order.created_at).toLocaleString('vi-VN')}</p>
-                                        <p style="margin: 10px 0; color: #10b981;"><strong>🎟️ Mã áp dụng:</strong> ${order.voucher_code || 'Không có'}</p>
-                                        <p style="margin: 10px 0; color: #6366f1;"><strong>💳 Phương thức:</strong> Thanh toán Online (Stripe)</p>
-                                        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1;">
-                                            <p style="margin: 0; font-size: 18px; color: #1e293b;"><strong>Đã thanh toán:</strong> <span style="color: #dc2626; font-size: 22px; font-weight: bold; float: right;">${Number(order.total).toLocaleString('vi-VN')} VND</span></p>
-                                        </div>
-                                    </div>
-                                    
-                                    <p style="color: #475569; font-size: 15px;">Chúng tôi sẽ liên hệ với bạn trong thời gian sớm nhất để xác nhận thời gian giao hàng.</p>
-                                    <p style="color: #475569; font-size: 15px; margin-bottom: 0;">Trân trọng,<br><strong style="color: #1e293b;">Đội ngũ IceStore</strong></p>
-                                </div>
-                            </div>
-                        `
-                    };
-
-                    transporter.sendMail(mailOptions, (error, info) => {
-                        if (error) console.error("Lỗi gửi email Nodemailer:", error);
-                        else console.log("Đã gửi email hóa đơn thành công đến:", userEmail);
-                    });
-                }
-            });
-
-            res.json({ message: "Thanh toán Stripe hoàn tất! Đã trừ kho, cộng điểm và gửi mail." });
-        });
-    });
-});
-
 // Lấy danh sách các khách hàng đã từng nhắn tin
-app.get("/admin/chats", verifyToken, (req, res) => {
+app.get("/admin/chats", verifyToken, verifyAdmin, (req, res) => {
     // Lấy danh sách khách hàng, sắp xếp theo ai nhắn gần nhất thì lên đầu
     const query = `
         SELECT u.id, u.full_name, u.username, u.avatar, MAX(c.created_at) as last_msg_time,
@@ -1046,7 +1094,7 @@ app.post("/vouchers/save", verifyToken, (req, res) => {
 });
 
 // Thêm Voucher mới
-app.post("/vouchers", verifyToken, (req, res) => {
+app.post("/vouchers", verifyToken, verifyAdmin, (req, res) => {
     const { code, discount_percent, max_discount, min_order_value, usage_limit, expiry_date, type, target_user_id, target_tier } = req.body;
     
     db.query("SELECT id FROM vouchers WHERE code = ?", [code], (err, results) => {
@@ -1539,76 +1587,36 @@ app.put("/orders/:order_id/confirm-received", verifyToken, (req, res) => {
 // === QUẢN LÝ NHÂN VIÊN ===
 
 // Lấy danh sách nhân viên
-app.get("/members", (req, res) => {
-    const { user_id } = req.headers;
-    
-    // Kiểm tra user có quyền supervisor không
-    if (!user_id) {
-        return res.status(401).json({ message: "Yêu cầu user_id" });
-    }
-    
-    db.query("SELECT is_supervisor FROM users WHERE id = ?", [user_id], (err, results) => {
-        if (err || !results.length || !results[0].is_supervisor) {
-            return res.status(403).json({ message: "Bạn không có quyền quản lý nhân viên" });
-        }
-        
-        db.query("SELECT id, username, email, role, is_supervisor, created_at FROM users WHERE role IN ('admin', 'staff') ORDER BY id DESC", (err, staffResults) => {
-            if (err) {
-                console.error("Lỗi lấy danh sách nhân viên:", err);
-                return res.status(500).json({ message: "Lỗi lấy danh sách nhân viên" });
-            }
-            res.json(staffResults);
-        });
+app.get("/members", verifyToken, verifyAdmin, (req, res) => {
+    // Chỉ cần 1 câu lệnh này vì verifyAdmin đã bảo kê rồi
+    db.query("SELECT id, username, email, role, is_supervisor, created_at FROM users WHERE role IN ('admin', 'staff') ORDER BY id DESC", (err, staffResults) => {
+        if (err) return res.status(500).json({ message: "Lỗi lấy danh sách nhân viên" });
+        res.json(staffResults);
     });
 });
 
 // Tạo nhân viên mới
-app.post("/members", verifyToken, async (req, res) => {
+app.post("/members", verifyToken, verifyAdmin, async (req, res) => {
     const { username, email, password, role } = req.body;
-    const { user_id } = req.headers;
     
-    // Kiểm tra supervisor role
-    if (!user_id) {
-        return res.status(401).json({ message: "Yêu cầu user_id" });
+    if (!username || !password) {
+        return res.status(400).json({ message: "Vui lòng nhập username và mật khẩu" });
     }
-    
-    db.query("SELECT is_supervisor FROM users WHERE id = ?", [user_id], async (err, results) => {
-        if (err || !results.length || !results[0].is_supervisor) {
-            return res.status(403).json({ message: "Bạn không có quyền quản lý nhân viên" });
-        }
-        
-        if (!username || !password) {
-            return res.status(400).json({ message: "Vui lòng nhập username và mật khẩu" });
-        }
 
-        // Kiểm tra username tồn tại
-        db.query("SELECT id FROM users WHERE username = ?", [username], async (err, checkResults) => {
-            if (err) {
-                console.error("Lỗi kiểm tra username:", err);
-                return res.status(500).json({ message: "Lỗi kiểm tra username" });
-            }
+    db.query("SELECT id FROM users WHERE username = ?", [username], async (err, checkResults) => {
+        if (checkResults.length > 0) return res.status(400).json({ message: "Username đã tồn tại" });
 
-            if (checkResults.length > 0) {
-                return res.status(400).json({ message: "Username đã tồn tại" });
-            }
-
-            // Hash password
-            const hashedPassword = await bcrypt.hash(password, 10);
-
-            const query = "INSERT INTO users (username, email, password, role, is_supervisor, created_at) VALUES (?, ?, ?, ?, 0, NOW())";
-            db.query(query, [username, email || null, hashedPassword, role || 'staff'], (err, result) => {
-                if (err) {
-                    console.error("Lỗi tạo nhân viên:", err);
-                    return res.status(500).json({ message: "Lỗi tạo nhân viên" });
-                }
-                res.json({ message: "Tạo nhân viên thành công", memberId: result.insertId });
-            });
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const query = "INSERT INTO users (username, email, password, role, is_supervisor, created_at) VALUES (?, ?, ?, ?, 0, NOW())";
+        db.query(query, [username, email || null, hashedPassword, role || 'staff'], (err, result) => {
+            if (err) return res.status(500).json({ message: "Lỗi tạo nhân viên" });
+            res.json({ message: "Tạo nhân viên thành công", memberId: result.insertId });
         });
     });
 });
 
 // Cập nhật nhân viên
-app.put("/members/:id", verifyToken, async (req, res) => {
+app.put("/members/:id", verifyToken, verifyAdmin, async (req, res) => {
     const { id } = req.params;
     const { email, role, password } = req.body;
     const { user_id } = req.headers;
@@ -1645,22 +1653,9 @@ app.put("/members/:id", verifyToken, async (req, res) => {
 });
 
 // Xóa nhân viên
-app.delete("/members/:id", verifyToken, (req, res) => {
+app.delete("/members/:id", verifyToken, verifyAdmin, (req, res) => {
     const { id } = req.params;
-    const { user_id } = req.headers;
-    
-    // Kiểm tra supervisor role
-    if (!user_id) {
-        return res.status(401).json({ message: "Yêu cầu user_id" });
-    }
-    
-    db.query("SELECT is_supervisor FROM users WHERE id = ?", [user_id], (err, results) => {
-        if (err || !results.length || !results[0].is_supervisor) {
-            return res.status(403).json({ message: "Bạn không có quyền quản lý nhân viên" });
-        }
-        
-        deleteStaffMember(res, id);
-    });
+    deleteStaffMember(res, id); // Gọi thẳng hàm xóa
 });
 
 // Hàm helper xóa nhân viên (dùng chung)
