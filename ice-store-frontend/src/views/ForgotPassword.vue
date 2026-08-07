@@ -18,7 +18,7 @@ async function resetPassword() {
 
     loading.value = true;
     try {
-        const res = await axios.post(`${import.meta.env.VITE_API_URL}/forgot-password`, {
+        const res = await axios.post(`${import.meta.env.VITE_API_URL}/reset-password`, {
             username: username.value,
             email: email.value,
             new_password: newPassword.value,
